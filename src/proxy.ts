@@ -1,0 +1,77 @@
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { auth } from "@/lib/auth";
+import { resolveRole } from "@/lib/roles";
+
+const CUSTOMER_ROUTES = ["/allservices", "/services"];
+const PROVIDER_ROUTES = ["/my-services"];
+const ADMIN_ROUTES = ["/admin"];
+
+function matchesRoute(pathname: string, routes: string[]) {
+  return routes.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`),
+  );
+}
+
+function redirectTo(req: NextRequest, fallbackPath: string) {
+  const referer = req.headers.get("referer");
+
+  if (referer) {
+    try {
+      const refererUrl = new URL(referer);
+      const requestUrl = new URL(req.url);
+      const isSameOrigin =
+        refererUrl.origin === requestUrl.origin &&
+        refererUrl.pathname !== req.nextUrl.pathname;
+
+      if (isSameOrigin) {
+        return NextResponse.redirect(
+          new URL(refererUrl.pathname + refererUrl.search, req.url),
+        );
+      }
+    } catch {
+      // invalid referer, fall through to fallback
+    }
+  }
+
+  return NextResponse.redirect(new URL(fallbackPath, req.url));
+}
+
+export async function proxy(req: NextRequest) {
+  const session = await auth.api.getSession({ headers: req.headers });
+
+  if (!session) {
+    return NextResponse.redirect(new URL("/", req.url));
+  }
+
+  const role = resolveRole(session.user.role);
+  const { pathname } = req.nextUrl;
+
+  if (matchesRoute(pathname, ADMIN_ROUTES) && role !== "admin") {
+    return redirectTo(req, "/");
+  }
+
+  if (matchesRoute(pathname, PROVIDER_ROUTES) && role !== "provider") {
+    return redirectTo(req, "/");
+  }
+
+  if (matchesRoute(pathname, CUSTOMER_ROUTES) && role !== "customer") {
+    return redirectTo(req, "/");
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: [
+    "/profile",
+    "/onboarding",
+    "/dashboard",
+    "/my-bookings",
+    "/my-services",
+    "/allservices",
+    "/services/:path*",
+    "/admin",
+    "/admin/:path*",
+  ],
+};
