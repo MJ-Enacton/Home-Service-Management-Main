@@ -267,7 +267,7 @@ export function ListingEditor({ categories, initial }: ListingEditorProps) {
                 <Label>Category *</Label>
                 <Select
                   value={categorySlug}
-                  onValueChange={() => setCategorySlug}
+                  onValueChange={(value) => value && setCategorySlug(value)}
                 >
                   <SelectTrigger className="w-full bg-background">
                     <SelectValue placeholder="Pick a category" />
@@ -325,49 +325,60 @@ export function ListingEditor({ categories, initial }: ListingEditorProps) {
           <CardContent className="space-y-5 p-6">
             <h2 className="font-semibold">Pricing</h2>
 
-            <div className="space-y-2">
-              <Label>Pricing type *</Label>
-              <div className="flex flex-wrap gap-2">
-                {(
-                  [
-                    { value: "hourly", label: "Hourly rate" },
-                    { value: "fixed", label: "Fixed price" },
-                    { value: "visit", label: "Per visit" },
-                  ] as const
-                ).map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setPricingType(option.value)}
-                    className={`rounded-lg border px-3.5 py-2 text-sm font-medium transition-colors ${
-                      pricingType === option.value
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "hover:border-primary/50"
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+            {tiers.length === 0 ? (
+              <>
+                <div className="space-y-2">
+                  <Label>Pricing type *</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {(
+                      [
+                        { value: "hourly", label: "Hourly rate" },
+                        { value: "fixed", label: "Fixed price" },
+                        { value: "visit", label: "Per visit" },
+                      ] as const
+                    ).map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setPricingType(option.value)}
+                        className={`rounded-lg border px-3.5 py-2 text-sm font-medium transition-colors ${
+                          pricingType === option.value
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "hover:border-primary/50"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-            <div className="max-w-xs space-y-2">
-              <Label htmlFor="basePrice">Base price ($) *</Label>
-              <div className="relative">
-                <span className="absolute top-1/2 left-3 -translate-y-1/2 text-sm text-muted-foreground">
-                  $
-                </span>
-                <Input
-                  id="basePrice"
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={basePriceDollars}
-                  onChange={(event) => setBasePriceDollars(event.target.value)}
-                  className="pl-7 bg-background"
-                />
-              </div>
-            </div>
+                <div className="max-w-xs space-y-2">
+                  <Label htmlFor="basePrice">Base price ($) *</Label>
+                  <div className="relative">
+                    <span className="absolute top-1/2 left-3 -translate-y-1/2 text-sm text-muted-foreground">
+                      $
+                    </span>
+                    <Input
+                      id="basePrice"
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={basePriceDollars}
+                      onChange={(event) =>
+                        setBasePriceDollars(event.target.value)
+                      }
+                      className="pl-7 bg-background"
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Tiers define the pricing. Base price and pricing type are not
+                required when tiers are set.
+              </p>
+            )}
 
             <div className="space-y-3 border-t pt-4">
               <div className="flex items-center justify-between">
@@ -409,7 +420,7 @@ export function ListingEditor({ categories, initial }: ListingEditorProps) {
                     />
                   </div>
                   <div className="relative">
-                    <span className="absolute top-1/2 left-3 -translate-y-1/2 text-sm text-muted-foreground">
+                    <span className="absolute top-1.5 left-3 text-sm text-muted-foreground">
                       $
                     </span>
                     <Input

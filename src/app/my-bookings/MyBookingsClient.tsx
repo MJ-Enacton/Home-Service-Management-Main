@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   CalendarDays,
   CalendarX2,
@@ -18,6 +19,7 @@ import {
 import type { BookingListItem, BookingStatus, Role } from "@/types";
 import { BOOKING_STATUS_LABELS } from "@/types";
 import { formatCents, formatTimeDisplay } from "@/lib/format";
+import { getSocket } from "@/lib/socket/client";
 import {
   cancelMyBooking,
   completeJob,
@@ -73,6 +75,7 @@ interface MyBookingsClientProps {
 }
 
 export function MyBookingsClient({ role, bookings }: MyBookingsClientProps) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [serviceFilter, setServiceFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -80,6 +83,18 @@ export function MyBookingsClient({ role, bookings }: MyBookingsClientProps) {
   const [reviewing, setReviewing] = useState<BookingListItem | null>(null);
 
   const isCustomer = role !== "provider";
+
+  // Listen for real-time booking updates via Socket.IO.
+  useEffect(() => {
+    const socket = getSocket();
+    function handleBookingUpdate() {
+      router.refresh();
+    }
+    socket.on("booking:updated", handleBookingUpdate);
+    return () => {
+      socket.off("booking:updated", handleBookingUpdate);
+    };
+  }, [router]);
 
   function runAction(action: () => Promise<{ success: boolean; error?: string }>) {
     startTransition(async () => {

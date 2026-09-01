@@ -50,11 +50,14 @@ interface GenerateSlotsOptions {
   slotMinutes?: number;
   /** step between slot starts in minutes (default = slotMinutes) */
   stepMinutes?: number;
+  /** Current time (server-side) to filter out past slots for today's date */
+  now?: Date;
 }
 
 /**
  * Generate bookable slots for a date from the provider's weekly windows,
- * marking overlaps with existing bookings.
+ * marking overlaps with existing bookings. For today's date, past slots
+ * (before `now`) are filtered out.
  */
 export function generateSlots({
   date,
@@ -62,9 +65,18 @@ export function generateSlots({
   bookedSlotTimes = [],
   slotMinutes = 90,
   stepMinutes = slotMinutes,
+  now = new Date(),
 }: GenerateSlotsOptions): Slot[] {
   const day = dayOfWeekOf(date);
   const booked = new Set(bookedSlotTimes);
+
+  // Check if the target date is today (same year, month, day as `now`)
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+
+  const currentMinutes = isToday ? timeToMinutes(minutesToTime(now.getHours() * 60 + now.getMinutes())) : -1;
 
   const slots: Slot[] = [];
   for (const window of windows) {
@@ -75,6 +87,11 @@ export function generateSlots({
 
     while (cursor + slotMinutes <= end) {
       const time = minutesToTime(cursor);
+      // For today's date, skip slots that are in the past
+      if (isToday && cursor < currentMinutes) {
+        cursor += stepMinutes;
+        continue;
+      }
       slots.push({ time, status: booked.has(time) ? "booked" : "available" });
       cursor += stepMinutes;
     }

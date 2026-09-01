@@ -33,6 +33,7 @@ export default async function ServiceDetailPage({
       providerBio={detail.providerBio}
       reviews={detail.reviews}
       viewerAddress={session?.user.address ?? null}
+      viewerUser={session?.user ?? null}
       isOwner={isOwner}
       isAuthenticated={Boolean(session?.user)}
     />

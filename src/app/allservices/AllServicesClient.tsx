@@ -1,17 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-  BadgeCheck,
-  Calendar,
   ChevronLeft,
   ChevronRight,
-  Clock,
   LayoutGrid,
   List,
-  MapPin,
   Search,
   ShieldCheck,
   SlidersHorizontal,
@@ -21,55 +17,117 @@ import {
 
 import type { CategoryOption } from "@/lib/db/queries/categories";
 import type { ServiceListingCard } from "@/types/service";
-import {
-  enumLabel,
-  formatCents,
-  pricingUnitLabel,
-} from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ListingCard } from "@/components/ListingCard";
+import ListingRow from "@/components/ListingRow";
+import {
+  PAGE_SIZE,
+  parseBrowseParams,
+  browseStateToQuery,
+  type BrowseState,
+} from "@/lib/browse-params";
 
 export type SortKey = "recommended" | "price-asc" | "price-desc" | "rating";
-
-export interface BrowseState {
-  q: string;
-  cats: string[];
-  minDollars: number | null;
-  maxDollars: number | null;
-  minRating: number;
-  verifiedOnly: boolean;
-  sort: SortKey;
-  page: number;
-}
 
 const PRICE_CEILING = 500;
 
 interface AllServicesClientProps {
-  listings: ServiceListingCard[];
-  total: number;
   categories: CategoryOption[];
-  state: BrowseState;
 }
 
-export function AllServicesClient({
-  listings,
-  total,
-  categories,
-  state,
-}: AllServicesClientProps) {
+export function AllServicesClient({ categories }: AllServicesClientProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
 
-  const [query, setQuery] = useState(state.q);
+  const [query, setQuery] = useState(searchParams.get("q")?.trim() ?? "");
   const [view, setView] = useState<"grid" | "list">("grid");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [showAllCategories, setShowAllCategories] = useState(false);
+  const [results, setResults] = useState<{
+    items: ServiceListingCard[];
+    total: number;
+  } | null>(null);
+  const [fetching, setFetching] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
-  const pageCount = Math.max(1, Math.ceil(total / 9));
+  const isInternalNavigationRef = useRef(false);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const priceDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Derive filter state from the current URL (source of truth)
+  const state: BrowseState & { page: number } = parseBrowseParams(searchParams);
+
+  // Sync local query state with URL when it changes externally (back/forward, clearFilters)
+  useEffect(() => {
+    if (isInternalNavigationRef.current) {
+      isInternalNavigationRef.current = false;
+      return;
+    }
+    setQuery(state.q);
+  }, [state.q]);
+
+  // Cleanup debounce timers
+  useEffect(() => {
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+      if (priceDebounceRef.current) clearTimeout(priceDebounceRef.current);
+    };
+  }, []);
+
+  // Debounce the URL-driven fetch so rapid filter changes coalesce.
+  const queryString = browseStateToQuery(state).toString();
+  const fetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Debounced fetch effect: runs whenever the query string changes.
+  useEffect(() => {
+    if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    // Show loading immediately before the async fetch starts
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFetching(true);
+    fetchTimeoutRef.current = setTimeout(() => {
+      fetch(`/api/listings${queryString ? `?${queryString}` : ""}`, {
+        signal: controller.signal,
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          setResults({ items: data.items ?? [], total: data.total ?? 0 });
+          setFetchError(null);
+        })
+        .catch((err) => {
+          if (err.name !== "AbortError") {
+            console.error(err);
+            setFetchError("Failed to load services. Please try again.");
+          }
+        })
+        .finally(() => {
+          setFetching(false);
+        });
+    }, 200);
+    return () => {
+      if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
+      controller.abort();
+    };
+  }, [queryString]);
+
+  const pageCount = Math.max(1, Math.ceil((results?.total ?? 0) / PAGE_SIZE));
   const safePage = Math.min(state.page, pageCount);
+
+  const hasActiveFilters =
+    Boolean(state.q) ||
+    state.cats.length > 0 ||
+    state.minDollars !== null ||
+    (state.maxDollars !== null && state.maxDollars < PRICE_CEILING) ||
+    state.minRating > 0 ||
+    state.verifiedOnly;
 
   function updateParams(patch: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams.toString());
@@ -81,18 +139,11 @@ export function AllServicesClient({
       }
     }
     if (!("page" in patch)) params.delete("page");
+    isInternalNavigationRef.current = true;
     startTransition(() => {
       router.push(params.size ? `${pathname}?${params}` : pathname);
     });
   }
-
-  const hasActiveFilters =
-    Boolean(state.q) ||
-    state.cats.length > 0 ||
-    state.minDollars !== null ||
-    (state.maxDollars !== null && state.maxDollars < PRICE_CEILING) ||
-    state.minRating > 0 ||
-    state.verifiedOnly;
 
   function clearFilters() {
     setQuery("");
@@ -108,6 +159,31 @@ export function AllServicesClient({
     });
   }
 
+  function handleSearchChange(value: string) {
+    setQuery(value);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      isInternalNavigationRef.current = true;
+      const q = value.trim();
+      updateParams({ q: q || null });
+    }, 300);
+  }
+
+  function handleSearchSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    isInternalNavigationRef.current = true;
+    const q = query.trim();
+    updateParams({ q: q || null });
+  }
+
+  function handlePriceChange(type: "min" | "max", value: string) {
+    if (priceDebounceRef.current) clearTimeout(priceDebounceRef.current);
+    priceDebounceRef.current = setTimeout(() => {
+      updateParams({ [type]: value === "" ? null : value });
+    }, 300);
+  }
+
   function toggleCategory(slug: string) {
     const next = state.cats.includes(slug)
       ? state.cats.filter((c) => c !== slug)
@@ -115,8 +191,10 @@ export function AllServicesClient({
     updateParams({ cats: next.join(",") || null });
   }
 
-  const visibleCategories = categories.slice(0, 6);
-  const hasMoreCategories = categories.length > visibleCategories.length;
+  const visibleCategories = showAllCategories
+    ? categories
+    : categories.slice(0, 6);
+  const hasMoreCategories = categories.length > 6;
 
   const filterPanel = (
     <div className="space-y-6">
@@ -136,12 +214,19 @@ export function AllServicesClient({
             </li>
           ))}
         </ul>
-        {(hasMoreCategories || state.cats.some(
-          (slug) => !categories.slice(0, 6).some((c) => c.slug === slug),
-        )) && <p className="mt-2.5 text-xs text-muted-foreground">
-            Showing the first {visibleCategories.length} of {categories.length}{" "}
-            categories
-          </p>}
+        {hasMoreCategories && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-2.5 w-full justify-start gap-1.5 px-0"
+            onClick={() => setShowAllCategories((prev) => !prev)}
+          >
+            {showAllCategories
+              ? "Show fewer categories"
+              : `Show all ${categories.length} categories`}
+            <ChevronRight className="size-3.5" />
+          </Button>
+        )}
       </div>
 
       <div className="border-t" />
@@ -162,10 +247,9 @@ export function AllServicesClient({
                 max={PRICE_CEILING}
                 value={state.minDollars ?? ""}
                 placeholder="0"
-                onChange={(event) => {
-                  const value = event.target.value;
-                  updateParams({ min: value === "" ? null : value });
-                }}
+                onChange={(event) =>
+                  handlePriceChange("min", event.target.value)
+                }
                 className="h-9 pl-7"
               />
             </div>
@@ -182,10 +266,9 @@ export function AllServicesClient({
                 max={PRICE_CEILING}
                 value={state.maxDollars ?? ""}
                 placeholder={String(PRICE_CEILING)}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  updateParams({ max: value === "" ? null : value });
-                }}
+                onChange={(event) =>
+                  handlePriceChange("max", event.target.value)
+                }
                 className="h-9 pl-7"
               />
             </div>
@@ -205,8 +288,7 @@ export function AllServicesClient({
               type="button"
               onClick={() =>
                 updateParams({
-                  rating:
-                    state.minRating === rating ? null : String(rating),
+                  rating: state.minRating === rating ? null : String(rating),
                 })
               }
               className={`flex h-11 w-12 flex-col items-center justify-center gap-0.5 rounded-lg border text-xs transition-colors ${
@@ -263,6 +345,11 @@ export function AllServicesClient({
     </div>
   );
 
+  const listings = results?.items ?? [];
+  const total = results?.total ?? 0;
+  const showSkeleton = results === null && fetching;
+  const showUpdating = results !== null && fetching;
+
   return (
     <main className="mx-auto w-full max-w-7xl px-4 md:px-6">
       {/* Page header */}
@@ -288,18 +375,22 @@ export function AllServicesClient({
             </div>
             <form
               className="relative w-full sm:w-72"
-              onSubmit={(event) => {
-                event.preventDefault();
-                updateParams({ q: query.trim() || null });
-              }}
+              onSubmit={handleSearchSubmit}
             >
               <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => handleSearchChange(event.target.value)}
                 placeholder="Search for a specific service..."
                 className="h-10 rounded-lg pl-10"
               />
+              <button
+                type="submit"
+                className="absolute top-1/2 right-3 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label="Search"
+              >
+                <Search className="size-4" />
+              </button>
             </form>
           </div>
         </div>
@@ -341,9 +432,7 @@ export function AllServicesClient({
               </span>
               <select
                 value={state.sort}
-                onChange={(event) =>
-                  updateParams({ sort: event.target.value })
-                }
+                onChange={(event) => updateParams({ sort: event.target.value })}
                 className="cursor-pointer rounded-md bg-transparent py-1 pr-6 font-medium outline-none"
               >
                 <option value="recommended">Recommended</option>
@@ -373,13 +462,25 @@ export function AllServicesClient({
             </div>
           </div>
 
-          {isPending && (
-            <p className="mb-3 text-sm text-muted-foreground" aria-live="polite">
+          {showUpdating && (
+            <p
+              className="mb-3 text-sm text-muted-foreground"
+              aria-live="polite"
+            >
               Updating results…
             </p>
           )}
 
-          {listings.length === 0 ? (
+          {showSkeleton ? (
+            <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+              {Array.from({ length: 9 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="h-72 animate-pulse rounded-xl border bg-card"
+                />
+              ))}
+            </div>
+          ) : listings.length === 0 ? (
             <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed py-16 text-center">
               <Search className="size-8 text-muted-foreground" />
               <p className="font-medium">No services found</p>
@@ -404,8 +505,12 @@ export function AllServicesClient({
             </div>
           )}
 
+          {fetchError && (
+            <p className="mt-3 text-sm text-destructive">{fetchError}</p>
+          )}
+
           {/* Pagination */}
-          {pageCount > 1 && (
+          {pageCount > 1 && results && (
             <nav className="mt-8 flex items-center justify-center gap-1.5">
               <Button
                 variant="outline"
@@ -443,100 +548,5 @@ export function AllServicesClient({
         </div>
       </div>
     </main>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* List-view row                                                      */
-/* ------------------------------------------------------------------ */
-
-function ListingRow({ listing }: { listing: ServiceListingCard }) {
-  return (
-    <Link
-      href={`/services/${listing.id}`}
-      className="group flex gap-4 overflow-hidden rounded-xl border bg-card p-4 shadow-sm transition-all hover:shadow-md"
-    >
-      <div className="relative w-40 shrink-0 overflow-hidden rounded-lg sm:w-52">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={`/api/services/${listing.id}/image`}
-          alt={listing.title}
-          className="h-32 w-full object-cover transition-transform duration-300 group-hover:scale-[1.03] sm:h-full"
-          loading="lazy"
-        />
-        {listing.categoryName && (
-          <span className="absolute top-2 left-2 rounded-full bg-white/95 px-2.5 py-1 text-xs font-medium text-zinc-800 shadow-sm dark:bg-zinc-900/95 dark:text-zinc-100">
-            {listing.categoryName}
-          </span>
-        )}
-      </div>
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              {listing.isVerified && (
-                <span className="flex items-center gap-1 rounded-full bg-primary px-2.5 py-1 text-xs font-medium text-white shadow-sm">
-                  <BadgeCheck className="size-3.5" />
-                  Verified
-                </span>
-              )}
-              <span className="flex items-center gap-1 text-sm">
-                <Star className="size-4 fill-amber-400 text-amber-400" />
-                <span className="font-semibold">
-                  {listing.ratingAvg !== null
-                    ? listing.ratingAvg.toFixed(1)
-                    : "New"}
-                </span>
-                {listing.ratingCount > 0 && (
-                  <span className="text-muted-foreground">
-                    ({listing.ratingCount})
-                  </span>
-                )}
-              </span>
-            </div>
-            <h3 className="mt-1.5 line-clamp-1 font-semibold">
-              {listing.title}
-            </h3>
-          </div>
-        </div>
-
-        <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-          {listing.description || "Professional service at your doorstep."}
-        </p>
-
-        <div className="mt-auto flex flex-wrap items-end justify-between gap-2 pt-3">
-          <div className="space-y-1 text-sm text-muted-foreground">
-            {listing.location && (
-              <p className="flex items-center gap-1.5">
-                <MapPin className="size-3.5 shrink-0" />
-                {listing.location}
-              </p>
-            )}
-            {listing.estimatedDuration && (
-              <p className="flex items-center gap-1.5">
-                <Calendar className="size-3.5 shrink-0" />
-                {enumLabel(listing.pricingType)} · {listing.estimatedDuration}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <p className="text-sm text-muted-foreground">
-              Starting from
-              <span className="ml-1.5 text-lg font-bold text-foreground">
-                {formatCents(listing.startingPriceCents, { withCents: false })}
-              </span>
-              <span className="text-xs">
-                /{pricingUnitLabel(listing.pricingType)}
-              </span>
-            </p>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-1.5 text-sm font-medium text-white transition-colors group-hover:bg-primary/90">
-              <Clock className="size-3.5" />
-              View Deal
-            </span>
-          </div>
-        </div>
-      </div>
-    </Link>
   );
 }

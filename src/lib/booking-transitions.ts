@@ -171,8 +171,8 @@ export async function notifyBookingUpdate(options: {
 }): Promise<void> {
   const label =
     options.result.status === "cancelled"
-      ? `${STATUS_EVENT_LABELS.cancelled} by ${options.actorName}`
-      : STATUS_EVENT_LABELS[options.result.status] ?? "Booking updated";
+      ? `${STATUS_EVENT_LABELS.cancelled}`
+      : (STATUS_EVENT_LABELS[options.result.status] ?? "Booking updated");
   const message = `Your booking ${options.result.bookingNumber}: ${label.toLowerCase()} by ${options.actorName}.`;
 
   const notificationId = crypto.randomUUID();

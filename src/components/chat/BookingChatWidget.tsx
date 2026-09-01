@@ -3,19 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  ArrowLeft,
-  MessageCircle,
-  Send,
-  X,
-} from "lucide-react";
+import { ArrowLeft, MessageCircle, Send, X } from "lucide-react";
 
 import type { ChatMessage, ChatSummary } from "./actions";
-import {
-  getActiveChats,
-  getChatMessages,
-  sendChatMessage,
-} from "./actions";
+import { getActiveChats, getChatMessages, sendChatMessage } from "./actions";
 import { getSocket } from "@/lib/socket/client";
 import { formatTimeDisplay } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -30,12 +21,18 @@ type View =
 export function BookingChatWidget() {
   const pathname = usePathname();
   const [view, setView] = useState<View>({ kind: "closed" });
+  const viewRef = useRef<View>(view);
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loadingThread, setLoadingThread] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Keep the ref in sync with the latest view state.
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
 
   const refreshChats = useCallback(async () => {
     if (document.visibilityState !== "visible") return;
@@ -99,15 +96,16 @@ export function BookingChatWidget() {
     function handleIncoming(rawPayload: unknown) {
       if (!isThreadPayload(rawPayload)) return;
       const payload = rawPayload;
-      setView((current) => {
-        if (current.kind === "thread" && current.bookingId === payload.bookingId) {
-          // Re-fetch so read receipts stay accurate.
-          void getChatMessages(payload.bookingId).then((result) => {
-            if (result.success) setMessages(result.messages);
-          });
-        }
-        return current;
-      });
+      const current = viewRef.current;
+      if (
+        current.kind === "thread" &&
+        current.bookingId === payload.bookingId
+      ) {
+        // Re-fetch so read receipts stay accurate.
+        void getChatMessages(payload.bookingId).then((result) => {
+          if (result.success) setMessages(result.messages);
+        });
+      }
       void refreshChats();
     }
 
@@ -168,7 +166,7 @@ export function BookingChatWidget() {
     <>
       {/* Panel */}
       {view.kind !== "closed" && (
-        <div className="fixed bottom-20 right-4 z-50 flex h-[480px] max-h-[calc(100vh-7rem)] w-[360px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border bg-card shadow-xl">
+        <div className="fixed bottom-20 right-4 z-50 flex h-120 max-h-[calc(100vh-7rem)] w-90 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border bg-card shadow-xl">
           {/* Header */}
           <div className="flex items-center gap-2 border-b bg-primary px-3 py-2.5 text-primary-foreground">
             {view.kind === "thread" && (
@@ -185,7 +183,7 @@ export function BookingChatWidget() {
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold">
                 {view.kind === "thread"
-                  ? activeChat?.counterpartyName ?? "Chat"
+                  ? (activeChat?.counterpartyName ?? "Chat")
                   : "Chats"}
               </p>
               {view.kind === "thread" && activeChat && (
@@ -225,10 +223,12 @@ export function BookingChatWidget() {
                       </span>
                       {chat.lastMessage && (
                         <span className="shrink-0 text-[11px] text-muted-foreground">
-                          {new Date(chat.lastMessage.createdAt).toLocaleDateString(
-                            "en-US",
-                            { month: "short", day: "numeric" },
-                          )}
+                          {new Date(
+                            chat.lastMessage.createdAt,
+                          ).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                          })}
                         </span>
                       )}
                     </span>
@@ -263,14 +263,16 @@ export function BookingChatWidget() {
               >
                 {activeChat?.bookingNumber} ·{" "}
                 {activeChat &&
-                  new Date(activeChat.scheduledDate).toLocaleDateString("en-US", {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                  })}{" "}
+                  new Date(activeChat.scheduledDate).toLocaleDateString(
+                    "en-US",
+                    {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                    },
+                  )}{" "}
                 ·{" "}
-                {activeChat &&
-                  formatTimeDisplay(activeChat.scheduledTimeSlot)}
+                {activeChat && formatTimeDisplay(activeChat.scheduledTimeSlot)}
               </Link>
 
               {/* Messages */}
@@ -300,7 +302,9 @@ export function BookingChatWidget() {
                         </p>
                         <p
                           className={`mt-1 text-right text-[10px] ${
-                            message.isMine ? "text-white/70" : "text-muted-foreground"
+                            message.isMine
+                              ? "text-white/70"
+                              : "text-muted-foreground"
                           }`}
                         >
                           {formatTimeDisplay(
@@ -346,11 +350,11 @@ export function BookingChatWidget() {
       {/* Floating bubble */}
       <button
         type="button"
-        aria-label={
-          view.kind === "closed" ? "Open chats" : "Close chats"
-        }
+        aria-label={view.kind === "closed" ? "Open chats" : "Close chats"}
         onClick={() =>
-          setView(view.kind === "closed" ? { kind: "list" } : { kind: "closed" })
+          setView(
+            view.kind === "closed" ? { kind: "list" } : { kind: "closed" },
+          )
         }
         className="fixed bottom-4 right-4 z-50 flex size-14 items-center justify-center rounded-full bg-primary text-white shadow-lg transition-transform hover:scale-105"
       >

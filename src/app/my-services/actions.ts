@@ -74,6 +74,18 @@ export async function saveListing(input: unknown): Promise<ActionResult> {
   }
   const { id, status, listing, tiers, images } = parsed.data;
 
+  // If tiers are provided but base pricing is missing, provide sensible defaults
+  // since tiers define the actual pricing.
+  const hasTiers = tiers.length > 0;
+  const finalPricingType = listing.pricingType ?? (hasTiers ? "fixed" : "hourly");
+  const finalBasePrice = listing.basePriceCents ?? (hasTiers ? 0 : 0);
+
+  if (hasTiers && (!listing.pricingType || listing.basePriceCents === undefined || listing.basePriceCents === null)) {
+    // Tiers define pricing; base price/type are not required
+  } else if (!hasTiers && (!listing.pricingType || listing.basePriceCents === undefined || listing.basePriceCents === null)) {
+    return { success: false, error: "Base price and pricing type are required when no tiers are provided." };
+  }
+
   for (const image of images) {
     const sizeBytes = Math.ceil((image.base64.length * 3) / 4);
     if (sizeBytes > MAX_IMAGE_BYTES) {
@@ -116,8 +128,8 @@ export async function saveListing(input: unknown): Promise<ActionResult> {
           title: listing.title,
           description: listing.description ?? null,
           categoryId: category.id,
-          pricingType: listing.pricingType,
-          basePrice: listing.basePriceCents,
+          pricingType: finalPricingType,
+          basePrice: finalBasePrice,
           location: listing.location ?? null,
           estimatedDuration: listing.estimatedDuration ?? null,
           tags: listing.tags,
@@ -138,8 +150,8 @@ export async function saveListing(input: unknown): Promise<ActionResult> {
           categoryId: category.id,
           title: listing.title,
           description: listing.description ?? null,
-          pricingType: listing.pricingType,
-          basePrice: listing.basePriceCents,
+          pricingType: finalPricingType,
+          basePrice: finalBasePrice,
           location: listing.location ?? null,
           estimatedDuration: listing.estimatedDuration ?? null,
           tags: listing.tags,

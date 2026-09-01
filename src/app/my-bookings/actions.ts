@@ -58,6 +58,12 @@ export async function respondToBookingRequest(
     actorName: session.user.name,
     result,
   });
+  // Also push to the actor so their own my-bookings page refreshes.
+  emitToUser(session.user.id, "booking:updated", {
+    bookingId: result.id,
+    bookingNumber: result.bookingNumber,
+    status: result.status,
+  });
 
   revalidatePath("/my-bookings");
   return { success: true };
@@ -79,6 +85,11 @@ export async function startJob(bookingId: string): Promise<ActionResult> {
     actorName: session.user.name,
     result,
   });
+  emitToUser(session.user.id, "booking:updated", {
+    bookingId: result.id,
+    bookingNumber: result.bookingNumber,
+    status: result.status,
+  });
 
   revalidatePath("/my-bookings");
   return { success: true };
@@ -99,6 +110,11 @@ export async function completeJob(bookingId: string): Promise<ActionResult> {
     userId: result.customerId,
     actorName: session.user.name,
     result,
+  });
+  emitToUser(session.user.id, "booking:updated", {
+    bookingId: result.id,
+    bookingNumber: result.bookingNumber,
+    status: result.status,
   });
 
   revalidatePath("/my-bookings");
@@ -127,6 +143,11 @@ export async function cancelMyBooking(
     userId: counterpartyId,
     actorName: session.user.name,
     result,
+  });
+  emitToUser(session.user.id, "booking:updated", {
+    bookingId: result.id,
+    bookingNumber: result.bookingNumber,
+    status: result.status,
   });
 
   revalidatePath("/my-bookings");

@@ -4,30 +4,26 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { useSession, authClient } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { NotificationBell } from "@/components/NotificationBell";
 import { MobileSidebar } from "@/components/MobileSidebar";
-import { Search, Wrench, LogOut } from "lucide-react";
+import { Wrench, LogOut } from "lucide-react";
 
 export function Navbar() {
   const { data: session, isPending } = useSession();
   const router = useRouter();
   const pathname = usePathname();
 
-  if (pathname.startsWith("/admin") || pathname === "/sign-in" || pathname === "/sign-up") {
+  if (
+    pathname.startsWith("/admin") ||
+    pathname === "/sign-in" ||
+    pathname === "/sign-up"
+  ) {
     return null;
   }
 
   const handleSignOut = async () => {
     await authClient.signOut();
     router.push("/");
-  };
-
-  const handleSearch = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const query = String(data.get("q") ?? "").trim();
-    router.push(query ? `/allservices?q=${encodeURIComponent(query)}` : "/allservices");
   };
 
   const navLinkClass =
@@ -46,22 +42,12 @@ export function Navbar() {
           <span className="text-lg font-bold tracking-tight">HandyHub</span>
         </Link>
 
-        <form
-          onSubmit={handleSearch}
-          className="relative mx-auto hidden w-full max-w-md md:block"
-          role="search"
-        >
-          <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            name="q"
-            placeholder="Search services, providers..."
-            className="h-9 rounded-full bg-muted/60 pl-10 text-sm"
-          />
-        </form>
-
         <div className="ml-auto flex items-center gap-3 md:gap-4">
           {!isPending && !session?.user ? (
             <>
+              <Link href="/allservices" className="hidden lg:block">
+                <span className={navLinkClass}>All Services</span>
+              </Link>
               <Link href="/sign-in" className="hidden sm:block">
                 <Button variant="ghost" size="sm">
                   Sign In

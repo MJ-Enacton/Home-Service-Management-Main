@@ -33,6 +33,8 @@ export interface ServiceListingCard {
   pricingType: PricingType;
   /** lowest price across basePrice and tiers, in cents */
   startingPriceCents: number;
+  /** whether the listing has pricing tiers */
+  hasTiers: boolean;
   location: string | null;
   estimatedDuration: string | null;
   isVerified: boolean;

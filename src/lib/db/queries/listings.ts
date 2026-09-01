@@ -67,6 +67,7 @@ const tierMin = db
     minTierPrice: sql<number>`min(${serviceTiers.price})::int`.as(
       "min_tier_price",
     ),
+    hasTiers: sql<boolean>`count(*) > 0`.as("has_tiers"),
   })
   .from(serviceTiers)
   .groupBy(serviceTiers.listingId)
@@ -95,6 +96,7 @@ interface ListingRow {
   providerImage: string | null;
   providerVerified: boolean | null;
   minTierPrice: number | null;
+  hasTiers: boolean;
   avgRating: number | null;
   reviewCount: number;
 }
@@ -118,6 +120,7 @@ function rowToCard(row: ListingRow): ServiceListingCard {
       row.minTierPrice !== null && row.minTierPrice < row.basePrice
         ? row.minTierPrice
         : row.basePrice,
+    hasTiers: row.hasTiers,
     location: row.location,
     estimatedDuration: row.estimatedDuration,
     isVerified: row.isVerified,
@@ -210,6 +213,7 @@ export async function listListings(
       providerImage: user.image,
       providerVerified: sql<boolean>`(select pp.is_verified from provider_profiles pp where pp.user_id = ${user.id})`,
       minTierPrice: tierMin.minTierPrice,
+      hasTiers: tierMin.hasTiers,
       avgRating: ratingAgg.avgRating,
       reviewCount: sql<number>`coalesce(${ratingAgg.reviewCount}, 0)::int`,
     })
@@ -325,9 +329,7 @@ export async function getListingDetail(
         })
         .from(reviews)
         .innerJoin(user, eq(reviews.reviewerId, user.id))
-        .where(
-          and(eq(reviews.listingId, id), eq(reviews.isVisible, true)),
-        )
+        .where(and(eq(reviews.listingId, id), eq(reviews.isVisible, true)))
         .orderBy(desc(reviews.createdAt))
         .limit(10),
     ]);
@@ -351,6 +353,7 @@ export async function getListingDetail(
       ratingAvg:
         row.avgRating === null ? null : Math.round(row.avgRating * 10) / 10,
       ratingCount: row.reviewCount,
+      hasTiers: tiers.length > 0,
     };
 
     return {

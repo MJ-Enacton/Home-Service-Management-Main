@@ -89,7 +89,6 @@ export function NotificationBell() {
         aria-label="Notifications"
       >
         <Bell className="size-4" />
-        Notifications
         {unreadCount > 0 && (
           <span className="absolute -top-2 -right-4 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white">
             {unreadCount > 9 ? "9+" : unreadCount}
@@ -97,7 +96,12 @@ export function NotificationBell() {
         )}
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Positioner side="bottom" align="end" sideOffset={8} className="z-50">
+        <Popover.Positioner
+          side="bottom"
+          align="end"
+          sideOffset={8}
+          className="z-50"
+        >
           <Popover.Popup
             className="w-80 origin-(--transform-origin) rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95"
             aria-label="Recent notifications"

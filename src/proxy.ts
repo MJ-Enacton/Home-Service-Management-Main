@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { resolveRole } from "@/lib/roles";
 
-const CUSTOMER_ROUTES = ["/allservices", "/services"];
+const CUSTOMER_ROUTES = ["/services"];
 const PROVIDER_ROUTES = ["/my-services"];
 const ADMIN_ROUTES = ["/admin"];
 
@@ -39,13 +39,17 @@ function redirectTo(req: NextRequest, fallbackPath: string) {
 
 export async function proxy(req: NextRequest) {
   const session = await auth.api.getSession({ headers: req.headers });
+  const { pathname } = req.nextUrl;
 
   if (!session) {
-    return NextResponse.redirect(new URL("/", req.url));
+    // Allow unauthenticated users to browse /allservices (read-only listings).
+    if (pathname === "/allservices" || pathname.startsWith("/allservices/")) {
+      return NextResponse.next();
+    }
+    return NextResponse.redirect(new URL("/sign-in", req.url));
   }
 
   const role = resolveRole(session.user.role);
-  const { pathname } = req.nextUrl;
 
   if (matchesRoute(pathname, ADMIN_ROUTES) && role !== "admin") {
     return redirectTo(req, "/");

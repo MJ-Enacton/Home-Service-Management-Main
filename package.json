@@ -5,8 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "node server.js --dev",
+    "dev:socket": "node socket-server/server.js",
+    "dev:all": "concurrently \"npm run dev\" \"npm run dev:socket\"",
     "build": "next build",
     "start": "node server.js",
+    "start:socket": "node socket-server/server.js",
     "lint": "eslint"
   },
   "dependencies": {
@@ -36,6 +39,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
+    "concurrently": "^9.2.4",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.3.1",

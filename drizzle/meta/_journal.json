@@ -15,6 +15,13 @@
       "when": 1787741326458,
       "tag": "0001_normal_cyclops",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788172879509,
+      "tag": "0002_dapper_grandmaster",
+      "breakpoints": true
     }
   ]
 }

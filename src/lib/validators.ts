@@ -45,8 +45,9 @@ export const listingSchema = z.object({
   title: z.string().min(5, "Title must be at least 5 characters.").max(120),
   description: z.string().max(2000).nullish(),
   categorySlug: z.string().min(1, "Category is required."),
-  pricingType: z.enum(pricingTypeEnum.enumValues),
-  basePriceCents: moneyCents,
+  // Pricing is required unless tiers are provided
+  pricingType: z.enum(pricingTypeEnum.enumValues).optional(),
+  basePriceCents: moneyCents.optional(),
   location: z.string().max(120).nullish(),
   estimatedDuration: z.string().max(60).nullish(),
   tags: z.array(z.string().min(1).max(30)).max(10).default([]),
@@ -61,25 +62,27 @@ export type TierInput = z.infer<typeof tierSchema>;
 
 export const bookingDetailsSchema = z.object({
   streetAddress: z.string().min(5, "Street address is required.").max(200),
-  city: z.string().max(100).optional(),
-  zipCode: z.string().max(20).optional(),
   jobNotes: z.string().max(2000).optional(),
-  contactFirstName: z.string().max(60).optional(),
-  contactLastName: z.string().max(60).optional(),
-  contactEmail: z.email("Enter a valid email.").optional(),
-  contactPhone: z.string().max(30).optional(),
+  contactFullName: z.string().max(120).optional(),
+  contactEmail: z.string().min(1, "Email is required.").email("Enter a valid email."),
+  contactPhone: z.string().min(1, "Phone number is required.").max(30),
 });
 
 export const bookingScheduleSchema = z.object({
   /** ISO date (YYYY-MM-DD) */
-  scheduledDate: z.iso.date({ message: "Pick a valid date." }),
+  scheduledDate: z.string().optional(),
   /** canonical 24h slot start, e.g. "09:30" */
   scheduledTimeSlot: z
     .string()
-    .regex(HH_MM, "Pick a valid time slot."),
+    .regex(HH_MM, "Pick a valid time slot.")
+    .optional()
+    .or(z.literal("")),
   isContactless: z.boolean().default(false),
   isUrgent: z.boolean().default(false),
   tierId: z.uuid().nullish(),
+}).refine(data => data.isUrgent || (data.scheduledDate && data.scheduledTimeSlot), {
+  message: "Date and time are required for non-urgent jobs.",
+  path: ["scheduledDate"],
 });
 
 export type BookingDetailsInput = z.infer<typeof bookingDetailsSchema>;

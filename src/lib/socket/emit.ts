@@ -1,11 +1,26 @@
-import type { Server } from "socket.io";
+const SOCKET_INTERNAL_URL = process.env.SOCKET_INTERNAL_URL || "http://localhost:5000";
+const INTERNAL_SECRET = process.env.SOCKET_INTERNAL_SECRET || "dev-secret-change-in-production";
 
-declare global {
-  var __io: Server | undefined;
-}
+async function internalEmit(payload: { event: string; payload: unknown; userId?: string; userIds?: string[] }) {
+  try {
+    const response = await fetch(`${SOCKET_INTERNAL_URL}/internal/emit`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        secret: INTERNAL_SECRET,
+        ...payload,
+      }),
+    });
 
-export function getIo(): Server | undefined {
-  return globalThis.__io;
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: "Unknown error" }));
+      console.error("[socket] Failed to emit:", error);
+    }
+  } catch (error) {
+    console.error("[socket] Internal emit request failed:", error);
+  }
 }
 
 export function emitToUser(
@@ -13,9 +28,7 @@ export function emitToUser(
   event: string,
   payload: unknown,
 ): void {
-  const io = getIo();
-  if (!io) return;
-  io.to(`user:${userId}`).emit(event, payload);
+  internalEmit({ event, payload, userId });
 }
 
 export function emitToUsers(
@@ -23,11 +36,5 @@ export function emitToUsers(
   event: string,
   payload: unknown,
 ): void {
-  const io = getIo();
-  if (!io) return;
-
-  const unique = [...new Set(userIds)];
-  for (const userId of unique) {
-    io.to(`user:${userId}`).emit(event, payload);
-  }
+  internalEmit({ event, payload, userIds });
 }

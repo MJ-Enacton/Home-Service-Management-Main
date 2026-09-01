@@ -43,21 +43,24 @@ interface ServiceDetailClientProps {
   providerBio: string | null;
   reviews: ListingReviewSummary[];
   viewerAddress: string | null;
+  viewerUser: {
+    id: string;
+    name: string;
+    email: string;
+    contact?: string | null;
+  } | null;
   isOwner: boolean;
   isAuthenticated: boolean;
 }
 
-type PaymentMethod = "card" | "paypal" | "wallet";
+type PaymentMethod = "card" | "cod";
 
 const STEPS = ["Job Details", "Schedule", "Payment"] as const;
 
 const EMPTY_DETAILS = {
   streetAddress: "",
-  city: "",
-  zipCode: "",
   jobNotes: "",
-  contactFirstName: "",
-  contactLastName: "",
+  contactFullName: "",
   contactEmail: "",
   contactPhone: "",
 };
@@ -69,6 +72,7 @@ export function ServiceDetailClient({
   providerBio,
   reviews,
   viewerAddress,
+  viewerUser,
   isOwner,
   isAuthenticated,
 }: ServiceDetailClientProps) {
@@ -76,6 +80,9 @@ export function ServiceDetailClient({
   const [details, setDetails] = useState({
     ...EMPTY_DETAILS,
     streetAddress: viewerAddress ?? "",
+    contactFullName: viewerUser?.name ?? "",
+    contactEmail: viewerUser?.email ?? "",
+    contactPhone: viewerUser?.contact ?? "",
   });
   const [date, setDate] = useState("");
   const [slots, setSlots] = useState<Slot[] | null>(null);
@@ -133,11 +140,17 @@ export function ServiceDetailClient({
 
   function goNext() {
     setError("");
-    if (step === 1 && !details.streetAddress.trim()) {
-      setError("Street address is required.");
-      return;
+    if (step === 1) {
+      if (!details.streetAddress.trim()) {
+        setError("Street address is required.");
+        return;
+      }
+      if (!details.contactEmail?.trim() || !details.contactPhone?.trim()) {
+        setError("Email and phone number are required.");
+        return;
+      }
     }
-    if (step === 2 && (!date || !slotTime)) {
+    if (step === 2 && !isUrgent && (!date || !slotTime)) {
       setError("Please pick a date and an available time slot.");
       return;
     }
@@ -485,59 +498,14 @@ export function ServiceDetailClient({
 
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div className="space-y-2">
-                        <Label htmlFor="city">City</Label>
+                        <Label htmlFor="fullName">Full name</Label>
                         <Input
-                          id="city"
-                          value={details.city}
+                          id="fullName"
+                          value={details.contactFullName}
                           onChange={(event) =>
                             setDetails((prev) => ({
                               ...prev,
-                              city: event.target.value,
-                            }))
-                          }
-                          className="bg-background"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="zip">ZIP code</Label>
-                        <Input
-                          id="zip"
-                          value={details.zipCode}
-                          onChange={(event) =>
-                            setDetails((prev) => ({
-                              ...prev,
-                              zipCode: event.target.value,
-                            }))
-                          }
-                          className="bg-background"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="firstName">First name</Label>
-                        <Input
-                          id="firstName"
-                          value={details.contactFirstName}
-                          onChange={(event) =>
-                            setDetails((prev) => ({
-                              ...prev,
-                              contactFirstName: event.target.value,
-                            }))
-                          }
-                          className="bg-background"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="lastName">Last name</Label>
-                        <Input
-                          id="lastName"
-                          value={details.contactLastName}
-                          onChange={(event) =>
-                            setDetails((prev) => ({
-                              ...prev,
-                              contactLastName: event.target.value,
+                              contactFullName: event.target.value,
                             }))
                           }
                           className="bg-background"
@@ -650,52 +618,56 @@ export function ServiceDetailClient({
                       </div>
                     )}
 
-                    <div className="space-y-2">
-                      <Label htmlFor="date">Date *</Label>
-                      <Input
-                        id="date"
-                        type="date"
-                        value={date}
-                        min={new Date().toISOString().split("T")[0]}
-                        onChange={(event) => handleDateChange(event.target.value)}
-                        className="w-fit bg-background"
-                      />
-                    </div>
+                    {!isUrgent && (
+                      <>
+                        <div className="space-y-2">
+                          <Label htmlFor="date">Date *</Label>
+                          <Input
+                            id="date"
+                            type="date"
+                            value={date}
+                            min={new Date().toISOString().split("T")[0]}
+                            onChange={(event) => handleDateChange(event.target.value)}
+                            className="w-fit bg-background"
+                          />
+                        </div>
 
-                    {date && (
-                      <div className="space-y-2">
-                        <Label>Available time slots *</Label>
-                        {loadingSlots ? (
-                          <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Loader2 className="size-4 animate-spin" />
-                            Checking availability…
-                          </p>
-                        ) : slots !== null && slots.length === 0 ? (
-                          <p className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">
-                            No open slots on this date. Try another day.
-                          </p>
-                        ) : (
-                          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                            {(slots ?? []).map((slot) => (
-                              <button
-                                key={slot.time}
-                                type="button"
-                                disabled={slot.status !== "available"}
-                                onClick={() => setSlotTime(slot.time)}
-                                className={`rounded-lg border py-2 text-sm font-medium transition-colors ${
-                                  slot.status !== "available"
-                                    ? "cursor-not-allowed border-border bg-muted text-muted-foreground line-through opacity-60"
-                                    : slotTime === slot.time
-                                      ? "border-primary bg-primary text-white"
-                                      : "hover:border-primary/60"
-                                }`}
-                              >
-                                {formatSlot(slot.time)}
-                              </button>
-                            ))}
+                        {date && (
+                          <div className="space-y-2">
+                            <Label>Available time slots *</Label>
+                            {loadingSlots ? (
+                              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Loader2 className="size-4 animate-spin" />
+                                Checking availability…
+                              </p>
+                            ) : slots !== null && slots.length === 0 ? (
+                              <p className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">
+                                No open slots on this date. Try another day.
+                              </p>
+                            ) : (
+                              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                                {(slots ?? []).map((slot) => (
+                                  <button
+                                    key={slot.time}
+                                    type="button"
+                                    disabled={slot.status !== "available"}
+                                    onClick={() => setSlotTime(slot.time)}
+                                    className={`rounded-lg border py-2 text-sm font-medium transition-colors ${
+                                      slot.status !== "available"
+                                        ? "cursor-not-allowed border-border bg-muted text-muted-foreground line-through opacity-60"
+                                        : slotTime === slot.time
+                                          ? "border-primary bg-primary text-white"
+                                          : "hover:border-primary/60"
+                                    }`}
+                                  >
+                                    {formatSlot(slot.time)}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
-                      </div>
+                      </>
                     )}
 
                     <div className="space-y-3">
@@ -756,10 +728,9 @@ export function ServiceDetailClient({
                               label: "Credit / Debit Card",
                               icon: CreditCard,
                             },
-                            { value: "paypal", label: "PayPal", icon: Wallet },
                             {
-                              value: "wallet",
-                              label: "Platform Wallet",
+                              value: "cod",
+                              label: "Cash on Delivery",
                               icon: Wallet,
                             },
                           ] as const

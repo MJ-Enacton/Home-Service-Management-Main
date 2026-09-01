@@ -36,7 +36,7 @@ export interface BookServiceInput {
   listingId: string;
   details: unknown;
   schedule: unknown;
-  paymentMethod: "card" | "paypal" | "wallet";
+  paymentMethod: "card" | "cod";
   /** Mock-gateway artifacts recorded on the payment row. */
   payment?: {
     cardLast4?: string;
@@ -106,6 +106,7 @@ export async function getScheduleOptions(
     date: targetDate,
     windows: effectiveWindows,
     bookedSlotTimes: bookedRows.map((row) => row.slot),
+    now: new Date(),
   });
 
   return { success: true, slots };
@@ -113,7 +114,7 @@ export async function getScheduleOptions(
 
 /** Mock gateway reference, e.g. "mock_card_4242_9f3a71c02b5d". */
 function buildMockExternalId(
-  method: "card" | "paypal" | "wallet",
+  method: "card" | "cod",
   cardLast4?: string,
 ): string {
   const token = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
@@ -149,7 +150,7 @@ export async function bookService(
     };
   }
 
-  if (!["card", "paypal", "wallet"].includes(input.paymentMethod)) {
+  if (!["card", "cod"].includes(input.paymentMethod)) {
     return { success: false, error: "Select a payment method." };
   }
 
@@ -188,32 +189,41 @@ export async function bookService(
     baseCents = tier.price;
   }
 
-  // Re-validate the slot at booking time to avoid double-booking races.
-  const slotCheck = await getScheduleOptions(
-    listing.id,
-    schedule.data.scheduledDate,
-  );
-  if (!slotCheck.success || !slotCheck.slots) {
-    return {
-      success: false,
-      error: slotCheck.error ?? "Could not verify availability.",
-    };
-  }
-  const requestedSlot = slotCheck.slots.find(
-    (slot) => slot.time === schedule.data.scheduledTimeSlot,
-  );
-  if (!requestedSlot || requestedSlot.status !== "available") {
-    return {
-      success: false,
-      error: "That time slot is no longer available. Please pick another.",
-    };
-  }
+  let scheduledDate: Date;
+  let scheduledTimeSlot: string;
 
-  const scheduledDate = new Date(
-    `${schedule.data.scheduledDate}T${schedule.data.scheduledTimeSlot}:00`,
-  );
-  if (Number.isNaN(scheduledDate.getTime())) {
-    return { success: false, error: "Invalid schedule." };
+  if (schedule.data.isUrgent) {
+    scheduledDate = new Date();
+    scheduledTimeSlot = `${scheduledDate.getHours().toString().padStart(2, "0")}:${scheduledDate.getMinutes().toString().padStart(2, "0")}`;
+  } else {
+    const slotCheck = await getScheduleOptions(
+      listing.id,
+      schedule.data.scheduledDate!,
+    );
+    if (!slotCheck.success || !slotCheck.slots) {
+      return {
+        success: false,
+        error: slotCheck.error ?? "Could not verify availability.",
+      };
+    }
+    const requestedSlot = slotCheck.slots.find(
+      (slot) => slot.time === schedule.data.scheduledTimeSlot,
+    );
+    if (!requestedSlot || requestedSlot.status !== "available") {
+      return {
+        success: false,
+        error: "That time slot is no longer available. Please pick another.",
+      };
+    }
+
+    scheduledDate = new Date(
+      `${schedule.data.scheduledDate}T${schedule.data.scheduledTimeSlot}:00`,
+    );
+    scheduledTimeSlot = schedule.data.scheduledTimeSlot!;
+
+    if (Number.isNaN(scheduledDate.getTime())) {
+      return { success: false, error: "Invalid schedule." };
+    }
   }
 
   const pricing = computePriceBreakdown(baseCents);
@@ -228,6 +238,9 @@ export async function bookService(
     for (let attempt = 0; attempt < 5 && !bookingId; attempt++) {
       try {
         bookingNumber = generateBookingNumber();
+        const { contactFullName, ...restDetails } = details.data;
+        const [firstName, ...lastNameParts] = (contactFullName || "").split(" ");
+        const lastName = lastNameParts.join(" ");
         const [inserted] = await db
           .insert(bookings)
           .values({
@@ -237,9 +250,11 @@ export async function bookService(
             customerId: session.user.id,
             providerId: listing.providerId,
             status: "requested",
-            ...details.data,
+            ...restDetails,
+            contactFirstName: firstName || null,
+            contactLastName: lastName || null,
             scheduledDate,
-            scheduledTimeSlot: schedule.data.scheduledTimeSlot,
+            scheduledTimeSlot,
             isContactless: schedule.data.isContactless,
             isUrgent: schedule.data.isUrgent,
             serviceFee: pricing.serviceFeeCents,
@@ -266,8 +281,8 @@ export async function bookService(
     const statements: [BatchItem<"pg">, ...BatchItem<"pg">[]] = [
       db.insert(payments).values({
         bookingId,
-        method: input.paymentMethod as "card" | "paypal" | "wallet",
-        status: "paid",
+        method: input.paymentMethod as "card" | "cod",
+        status: input.paymentMethod === "cod" ? "pending" : "paid",
         amountPaid: pricing.totalCents,
         paidAt: new Date(),
         externalId: buildMockExternalId(input.paymentMethod, input.payment?.cardLast4),
@@ -295,6 +310,11 @@ export async function bookService(
       type: "new_request",
     };
     emitToUser(listing.providerId, "notification:new", payload);
+    emitToUser(listing.providerId, "booking:updated", {
+      bookingId,
+      bookingNumber,
+      status: "requested",
+    });
     void pushUnreadCount(listing.providerId);
 
     return { success: true, bookingNumber };

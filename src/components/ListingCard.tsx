@@ -5,11 +5,7 @@ import Link from "next/link";
 import { BadgeCheck, Clock, Hammer, MapPin, Star } from "lucide-react";
 
 import type { ServiceListingCard as ListingCardData } from "@/types/service";
-import {
-  enumLabel,
-  formatCents,
-  pricingUnitLabel,
-} from "@/lib/format";
+import { enumLabel, formatCents, pricingUnitLabel } from "@/lib/format";
 
 interface ListingCardProps {
   listing: ListingCardData;
@@ -67,7 +63,9 @@ export function ListingCard({ listing }: ListingCardProps) {
           <span className="flex shrink-0 items-center gap-1 text-sm">
             <Star className="size-4 fill-amber-400 text-amber-400" />
             <span className="font-semibold">
-              {listing.ratingAvg !== null ? listing.ratingAvg.toFixed(1) : "New"}
+              {listing.ratingAvg !== null
+                ? listing.ratingAvg.toFixed(1)
+                : "New"}
             </span>
             {listing.ratingCount > 0 && (
               <span className="text-muted-foreground">
@@ -119,7 +117,11 @@ export function ListingCard({ listing }: ListingCardProps) {
             <span className="ml-1.5 text-lg font-bold text-foreground">
               {formatCents(listing.startingPriceCents, { withCents: false })}
             </span>
-            <span className="text-xs">/{pricingUnitLabel(listing.pricingType)}</span>
+            {!listing.hasTiers && (
+              <span className="text-xs">
+                /{pricingUnitLabel(listing.pricingType)}
+              </span>
+            )}
           </p>
           <span className="rounded-full bg-primary px-4 py-1.5 text-sm font-medium text-white transition-colors group-hover:bg-primary/90">
             Book now
