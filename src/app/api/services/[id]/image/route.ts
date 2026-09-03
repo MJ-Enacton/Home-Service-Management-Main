@@ -17,7 +17,8 @@ function imageResponse(imageData: string, mime: string | null) {
     headers: {
       "Content-Type": mime ?? "image/jpeg",
       "Content-Length": buffer.length.toString(),
-      "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400",
+      // Long cache + immutable so view switches (grid <-> list) reuse browser cache and never hit DB again
+      "Cache-Control": "public, max-age=86400, immutable, stale-while-revalidate=86400",
     },
   });
 }
@@ -74,5 +75,9 @@ export async function GET(
     }
   }
 
-  return new NextResponse("Not found", { status: 404 });
+  // Cache the 404 so the allservices grid does not hammer DB on every view switch / re-render
+  return new NextResponse("Not found", {
+    status: 404,
+    headers: { "Cache-Control": "public, max-age=300, stale-while-revalidate=60" },
+  });
 }

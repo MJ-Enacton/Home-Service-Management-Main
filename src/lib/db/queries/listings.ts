@@ -36,7 +36,6 @@ export interface ListingFilters {
   maxPrice?: number;
   /** inclusive minimum average rating (e.g. 4 => "4+") */
   minRating?: number;
-  verifiedOnly?: boolean;
   /** free-text match against title/description */
   search?: string;
 }
@@ -87,18 +86,17 @@ interface ListingRow {
   basePrice: number;
   location: string | null;
   estimatedDuration: string | null;
-  isVerified: boolean;
   tags: unknown;
   categoryName: string | null;
   categorySlug: string | null;
   providerId: string;
   providerName: string;
   providerImage: string | null;
-  providerVerified: boolean | null;
   minTierPrice: number | null;
   hasTiers: boolean;
   avgRating: number | null;
   reviewCount: number;
+  hasImage: boolean;
 }
 
 function rowToCard(row: ListingRow): ServiceListingCard {
@@ -113,7 +111,6 @@ function rowToCard(row: ListingRow): ServiceListingCard {
       id: row.providerId,
       name: row.providerName,
       image: row.providerImage,
-      isVerified: row.providerVerified ?? false,
     },
     pricingType: row.pricingType,
     startingPriceCents:
@@ -123,11 +120,11 @@ function rowToCard(row: ListingRow): ServiceListingCard {
     hasTiers: row.hasTiers,
     location: row.location,
     estimatedDuration: row.estimatedDuration,
-    isVerified: row.isVerified,
     tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
     ratingAvg:
       row.avgRating === null ? null : Math.round(row.avgRating * 10) / 10,
     ratingCount: row.reviewCount,
+    hasImage: row.hasImage ?? false,
   };
 }
 
@@ -163,9 +160,6 @@ export async function listListings(
   if (filters.maxPrice !== undefined) {
     conditions.push(sql`${effectivePriceSql} <= ${filters.maxPrice}`);
   }
-  if (filters.verifiedOnly) {
-    conditions.push(eq(serviceListings.isVerified, true));
-  }
   if (filters.search?.trim()) {
     const pattern = `%${filters.search.trim()}%`;
     const searchCondition = or(
@@ -187,7 +181,6 @@ export async function listListings(
         return [desc(sql`coalesce(${ratingAgg.avgRating}, 0)`)];
       default:
         return [
-          desc(serviceListings.isVerified),
           desc(sql`coalesce(${ratingAgg.avgRating}, 0)`),
           desc(serviceListings.createdAt),
         ];
@@ -204,18 +197,20 @@ export async function listListings(
       basePrice: serviceListings.basePrice,
       location: serviceListings.location,
       estimatedDuration: serviceListings.estimatedDuration,
-      isVerified: serviceListings.isVerified,
       tags: serviceListings.tags,
       categoryName: categories.name,
       categorySlug: categories.slug,
       providerId: user.id,
       providerName: user.name,
       providerImage: user.image,
-      providerVerified: sql<boolean>`(select pp.is_verified from provider_profiles pp where pp.user_id = ${user.id})`,
       minTierPrice: tierMin.minTierPrice,
       hasTiers: tierMin.hasTiers,
       avgRating: ratingAgg.avgRating,
       reviewCount: sql<number>`coalesce(${ratingAgg.reviewCount}, 0)::int`,
+      hasImage:
+        sql<boolean>`exists (select 1 from listing_images li where li.listing_id = ${serviceListings.id}) or ${categories.imageData} is not null`.as(
+          "has_image",
+        ),
     })
     .from(serviceListings)
     .innerJoin(user, eq(serviceListings.providerId, user.id))
@@ -289,7 +284,6 @@ export async function getListingDetail(
         providerBio: sql<
           string | null
         >`(select pp.bio from provider_profiles pp where pp.user_id = ${user.id})`,
-        providerVerified: sql<boolean>`(select pp.is_verified from provider_profiles pp where pp.user_id = ${user.id})`,
       })
       .from(serviceListings)
       .innerJoin(user, eq(serviceListings.providerId, user.id))
@@ -344,7 +338,6 @@ export async function getListingDetail(
         id: base.providerId,
         name: row.providerName,
         image: row.providerImage,
-        isVerified: row.providerVerified ?? false,
       },
       startingPriceCents:
         row.minTierPrice !== null && row.minTierPrice < base.basePrice
@@ -354,6 +347,7 @@ export async function getListingDetail(
         row.avgRating === null ? null : Math.round(row.avgRating * 10) / 10,
       ratingCount: row.reviewCount,
       hasTiers: tiers.length > 0,
+      hasImage: images.length > 0,
     };
 
     return {

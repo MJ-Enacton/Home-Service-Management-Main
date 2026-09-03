@@ -3,7 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { ImagePlus, Loader2, Save, Trash2 } from "lucide-react";
 
-import { saveProviderProfile } from "@/app/profile/actions";
+import { saveProviderProfile } from "@/lib/profile/actions";
 import { Button } from "@/components/ui/button";
 import {
   Card,

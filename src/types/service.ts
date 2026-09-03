@@ -18,7 +18,6 @@ export interface ListingProviderSummary {
   id: string;
   name: string;
   image: string | null;
-  isVerified: boolean;
 }
 
 /** Card shown in the services grid and home "top rated" section */
@@ -37,11 +36,12 @@ export interface ServiceListingCard {
   hasTiers: boolean;
   location: string | null;
   estimatedDuration: string | null;
-  isVerified: boolean;
   tags: string[];
   /** aggregate review stats (null when the listing has no reviews yet) */
   ratingAvg: number | null;
   ratingCount: number;
+  /** whether this listing has an image (or its category has a fallback image) */
+  hasImage: boolean;
 }
 
 /** Detail-page payload */

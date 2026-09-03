@@ -51,20 +51,28 @@ export function NotificationsClient({
   useEffect(() => {
     const socket = getSocket();
 
-    socket.on("notification:new", (payload: NewRequestEvent) => {
+    socket.on("notification:new", (payload: NewRequestEvent & { title?: string; bookingId?: string | null }) => {
       setItems((prev) => {
         if (prev.some((item) => item.id === payload.id)) return prev;
+        const raw = payload as unknown as {
+          id: string;
+          message: string;
+          title?: string;
+          type?: string;
+          bookingId?: string | null;
+          createdAt: string;
+        };
         const incoming: Item = {
-          id: payload.id,
-          message: payload.message,
-          title: "New booking request",
-          type: payload.type ?? "new_request",
-          bookingId: payload.bookingId,
+          id: raw.id,
+          message: raw.message,
+          title: raw.title ?? "New booking request",
+          type: raw.type ?? "new_request",
+          bookingId: raw.bookingId ?? null,
           bookingStatus:
-            payload.type === "request_accepted" ? "confirmed" : null,
+            raw.type === "request_accepted" ? "confirmed" : null,
           readAt: null,
           archivedAt: null,
-          createdAt: new Date(payload.createdAt),
+          createdAt: new Date(raw.createdAt),
         };
         return [incoming, ...prev];
       });
@@ -139,45 +147,32 @@ export function NotificationsClient({
   const isProvider = role === "provider";
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 pb-16 md:px-6">
-      <div className="mb-8 border-b bg-muted/40 -mx-4 px-4 py-8 md:-mx-6 md:px-6">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
-            Notifications
-          </h1>
-          <p className="text-muted-foreground">
-            {hasUnread
-              ? `You have ${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}.`
-              : "You are all caught up."}
+    <main className="mx-auto w-full max-w-3xl px-4 pb-12 md:px-6">
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Notifications</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {hasUnread ? `${unreadCount} unread · ` : ""}Booking updates and system messages.
           </p>
         </div>
-      </div>
-
-      <div className="mb-4 flex flex-wrap items-center justify-end gap-4">
         {hasUnread && (
-          <Button variant="outline" size="sm" onClick={handleMarkAllRead}>
-            <CheckCheck className="size-4" />
-            Mark all as read
+          <Button variant="outline" size="sm" className="h-8 rounded-full" onClick={handleMarkAllRead}>
+            <CheckCheck className="size-3.5" />
+            Mark all read
           </Button>
         )}
       </div>
 
       {items.length === 0 ? (
-        <Card className="overflow-hidden border-dashed bg-muted/40">
-          <CardContent className="flex flex-col items-center gap-4 py-16 text-center">
-            <div className="rounded-full bg-primary/10 p-4">
-              <Bell className="size-8 text-primary" />
-            </div>
-            <div>
-              <p className="text-lg font-semibold">No notifications yet</p>
-              <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                New booking requests and status updates will show up here.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="rounded-xl border border-dashed bg-white py-12 text-center dark:bg-zinc-900">
+          <Bell className="mx-auto size-6 text-muted-foreground" />
+          <p className="mt-3 text-sm font-medium">No notifications</p>
+          <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
+            You&apos;re all caught up — new requests and booking updates will appear here.
+          </p>
+        </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           {items.map((notification) => {
             const isUnread = !notification.readAt;
             const canRespond =

@@ -3,8 +3,8 @@ import type { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { resolveRole } from "@/lib/roles";
 
-const CUSTOMER_ROUTES = ["/services"];
-const PROVIDER_ROUTES = ["/my-services"];
+const CUSTOMER_ROUTES = ["/services", "/customer"];
+const PROVIDER_ROUTES = ["/provider"];
 const ADMIN_ROUTES = ["/admin"];
 
 function matchesRoute(pathname: string, routes: string[]) {
@@ -42,8 +42,8 @@ export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   if (!session) {
-    // Allow unauthenticated users to browse /allservices (read-only listings).
-    if (pathname === "/allservices" || pathname.startsWith("/allservices/")) {
+    // Allow unauthenticated users to browse /services (read-only listings).
+    if (pathname === "/services" || pathname.startsWith("/services/")) {
       return NextResponse.next();
     }
     return NextResponse.redirect(new URL("/sign-in", req.url));
@@ -68,13 +68,14 @@ export async function proxy(req: NextRequest) {
 
 export const config = {
   matcher: [
-    "/profile",
     "/onboarding",
     "/dashboard",
-    "/my-bookings",
-    "/my-services",
-    "/allservices",
+    "/services",
     "/services/:path*",
+    "/customer/:path*",
+    "/provider/:path*",
+    "/notifications",
+    "/notifications/:path*",
     "/admin",
     "/admin/:path*",
   ],

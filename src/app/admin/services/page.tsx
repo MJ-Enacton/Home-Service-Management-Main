@@ -9,8 +9,7 @@ export interface ModerationRow {
   id: string;
   title: string;
   description: string | null;
-  status: "active" | "inactive" | "draft";
-  isVerified: boolean;
+  status: "active" | "inactive" | "draft" | "pending" | "rejected";
   basePriceCents: number;
   categoryName: string | null;
   providerName: string;
@@ -24,7 +23,6 @@ export default async function AdminServicesPage() {
       title: serviceListings.title,
       description: serviceListings.description,
       status: serviceListings.status,
-      isVerified: serviceListings.isVerified,
       basePriceCents: serviceListings.basePrice,
       categoryName: categories.name,
       providerName: user.name,

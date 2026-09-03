@@ -39,13 +39,13 @@ export function MobileSidebar({ role, name }: MobileSidebarProps) {
     ...(role === "admin"
       ? [{ href: "/admin", label: "Admin", icon: LayoutGrid }]
       : role === "provider"
-        ? [{ href: "/my-services", label: "My Services", icon: Wrench }]
-        : [{ href: "/allservices", label: "All Services", icon: LayoutGrid }]),
-    { href: "/notifications", label: "Notifications", icon: Bell },
+        ? [{ href: "/provider/my-services", label: "My Services", icon: Wrench }]
+        : [{ href: "/services", label: "Services", icon: LayoutGrid }]),
+    { href: role === "provider" ? "/provider/notifications" : role === "customer" ? "/customer/notifications" : "/notifications", label: "Notifications", icon: Bell },
     ...(role !== "admin"
-      ? [{ href: "/my-bookings", label: "My Bookings", icon: CalendarDays }]
+      ? [{ href: role === "provider" ? "/provider/my-bookings" : "/customer/my-bookings", label: "My Bookings", icon: CalendarDays }]
       : []),
-    { href: "/profile", label: "Profile", icon: UserRound },
+    { href: role === "provider" ? "/provider/profile" : role === "customer" ? "/customer/profile" : "/profile", label: "Profile", icon: UserRound },
   ];
 
   return (
@@ -109,7 +109,7 @@ export function MobileSidebar({ role, name }: MobileSidebarProps) {
               <div className="border-t p-3 dark:border-zinc-800">
                 {role === "provider" && (
                   <Link
-                    href="/allservices"
+                    href="/services"
                     onClick={() => setOpen(false)}
                     className="mb-2 flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
                   >

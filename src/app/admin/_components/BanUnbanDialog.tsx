@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { Ban, Loader2, ShieldCheck } from "lucide-react";
 
 import type { AdminUser } from "@/types";
-import { banUser, unbanUser } from "@/app/admin/users/actions";
+import { banUser, unbanUser } from "@/app/admin/customers/actions";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

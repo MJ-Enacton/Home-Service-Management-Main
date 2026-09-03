@@ -13,8 +13,6 @@ import {
   ShieldBan,
 } from "lucide-react";
 
-import { Card, CardContent } from "@/components/ui/card";
-
 async function getCount(
   query: Promise<{ count: number }[]>,
 ): Promise<number> {
@@ -108,56 +106,44 @@ export default async function AdminDashboardPage() {
   ];
 
   return (
-    <div className="mx-auto w-full max-w-5xl">
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Overview of your platform at a glance.
-        </p>
+    <div className="mx-auto w-full max-w-5xl px-4 py-6 md:px-0">
+      <div className="mb-6">
+        <h1 className="text-xl font-semibold tracking-tight">Overview</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Platform health at a glance — people, services and bookings.</p>
       </div>
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-muted-foreground uppercase">
-          People &amp; Services
-        </h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <h2 className="mb-2.5 text-xs font-semibold tracking-wider text-muted-foreground uppercase">People & Services</h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {stats.map((stat) => (
-            <Link key={stat.label} href={stat.href}>
-              <Card className="transition-colors hover:border-blue-300 dark:hover:border-blue-800">
-                <CardContent className="flex items-center gap-4 p-5">
-                  <div className="rounded-lg bg-blue-50 p-2.5 dark:bg-blue-950/50">
-                    <stat.icon className="size-5 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-semibold">{stat.value}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {stat.label}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
+            <Link key={stat.label} href={stat.href} className="group">
+              <div className="flex items-center gap-3 rounded-xl border bg-white p-4 transition hover:border-zinc-300 dark:bg-zinc-900 dark:border-zinc-800 dark:hover:border-zinc-700">
+                <span className="flex size-8 items-center justify-center rounded-lg bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
+                  <stat.icon className="size-4" />
+                </span>
+                <div>
+                  <p className="text-lg font-semibold leading-none">{stat.value}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{stat.label}</p>
+                </div>
+              </div>
             </Link>
           ))}
         </div>
       </section>
 
-      <section className="mt-8">
-        <h2 className="mb-3 text-sm font-semibold text-muted-foreground uppercase">
-          Bookings
-        </h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="mt-6">
+        <h2 className="mb-2.5 text-xs font-semibold tracking-wider text-muted-foreground uppercase">Bookings</h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {requests.map((item) => (
-            <Card key={item.label}>
-              <CardContent className="flex items-center gap-4 p-5">
-                <div className="rounded-lg bg-zinc-100 p-2.5 dark:bg-zinc-800">
-                  <item.icon className="size-5 text-zinc-600 dark:text-zinc-300" />
-                </div>
-                <div>
-                  <p className="text-2xl font-semibold">{item.value}</p>
-                  <p className="text-xs text-muted-foreground">{item.label}</p>
-                </div>
-              </CardContent>
-            </Card>
+            <div key={item.label} className="flex items-center gap-3 rounded-xl border bg-white p-4 dark:bg-zinc-900 dark:border-zinc-800">
+              <span className="flex size-8 items-center justify-center rounded-lg bg-zinc-50 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                <item.icon className="size-4" />
+              </span>
+              <div>
+                <p className="text-lg font-semibold leading-none">{item.value}</p>
+                <p className="text-xs text-muted-foreground">{item.label}</p>
+              </div>
+            </div>
           ))}
         </div>
       </section>

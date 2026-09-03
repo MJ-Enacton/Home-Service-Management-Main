@@ -27,78 +27,126 @@ export function Navbar() {
   };
 
   const navLinkClass =
-    "text-sm font-medium text-muted-foreground transition-colors hover:text-foreground";
+    "text-[13px] font-medium tracking-tight text-muted-foreground transition-colors hover:text-foreground";
+
+  const isActive = (href: string) =>
+    pathname === href || pathname.startsWith(`${href}/`);
 
   return (
-    <nav className="sticky top-0 z-50 w-full border-b bg-white/95 dark:bg-background/95 backdrop-blur supports-backdrop-filter:bg-white/80">
-      <div className="mx-auto flex h-16 w-full max-w-7xl items-center gap-4 px-4 md:px-6">
+    <nav className="sticky top-0 z-50 w-full border-b bg-white/80 backdrop-blur-xl dark:bg-zinc-900/80 dark:border-zinc-800">
+      <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-6 px-4 md:px-6">
         <Link
           href="/"
-          className="flex shrink-0 items-center gap-2 transition-transform hover:scale-[1.02]"
+          className="flex shrink-0 items-center gap-2.5"
+          aria-label="HandyHub home"
         >
-          <div className="flex size-8 items-center justify-center rounded-lg bg-primary shadow-sm">
-            <Wrench className="size-4.5 text-primary-foreground" />
-          </div>
-          <span className="text-lg font-bold tracking-tight">HandyHub</span>
+          <span className="flex size-7 items-center justify-center rounded-lg bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
+            <Wrench className="size-3.5" />
+          </span>
+          <span className="text-[15px] font-semibold tracking-tight">
+            HandyHub
+          </span>
+          <span className="hidden rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 md:inline-flex">
+            Home services
+          </span>
         </Link>
 
-        <div className="ml-auto flex items-center gap-3 md:gap-4">
+        {/* Center nav - purposeful, not blocky */}
+        <div className="hidden flex-1 items-center justify-center lg:flex">
+          {!isPending && session?.user && (
+            <div className="flex items-center gap-1 rounded-full border bg-zinc-50 p-1 dark:bg-zinc-800 dark:border-zinc-700">
+              <Link
+                href="/services"
+                className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${isActive("/services") ? "bg-white shadow-sm text-foreground dark:bg-zinc-700" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Explore
+              </Link>
+              {session.user.role === "provider" && (
+                <Link
+                  href="/provider/dashboard"
+                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${isActive("/provider") ? "bg-white shadow-sm text-foreground dark:bg-zinc-700" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  Dashboard
+                </Link>
+              )}
+              {session.user.role !== "admin" && (
+                <Link
+                  href={session.user.role === "provider" ? "/provider/my-bookings" : "/customer/my-bookings"}
+                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${isActive(session.user.role === "provider" ? "/provider/my-bookings" : "/customer/my-bookings") || isActive("/my-bookings") ? "bg-white shadow-sm text-foreground dark:bg-zinc-700" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  Bookings
+                </Link>
+              )}
+              {session.user.role === "provider" && (
+                <Link
+                  href="/provider/my-services"
+                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${isActive("/provider/my-services") || isActive("/my-services") ? "bg-white shadow-sm text-foreground dark:bg-zinc-700" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  Services
+                </Link>
+              )}
+              {session.user.role === "admin" && (
+                <Link
+                  href="/admin"
+                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${isActive("/admin") ? "bg-white shadow-sm text-foreground dark:bg-zinc-700" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  Admin
+                </Link>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="ml-auto flex items-center gap-2 md:gap-3">
           {!isPending && !session?.user ? (
             <>
-              <Link href="/allservices" className="hidden lg:block">
-                <span className={navLinkClass}>All Services</span>
+              <Link href="/services" className="hidden lg:block">
+                <span className={navLinkClass}>Explore</span>
               </Link>
               <Link href="/sign-in" className="hidden sm:block">
-                <Button variant="ghost" size="sm">
-                  Sign In
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 rounded-full px-4 text-xs"
+                >
+                  Sign in
                 </Button>
               </Link>
               <Link href="/sign-up">
-                <Button size="sm">Get Started</Button>
+                <Button
+                  size="sm"
+                  className="h-8 rounded-full bg-zinc-900 px-4 text-xs text-white hover:bg-zinc-800 dark:bg-white dark:text-zinc-900"
+                >
+                  Get started
+                </Button>
               </Link>
             </>
           ) : session?.user ? (
             <>
-              <div className="hidden items-center gap-4 lg:flex">
-                {session.user.role === "admin" ? (
-                  <Link href="/admin" className={navLinkClass}>
-                    Admin
-                  </Link>
-                ) : session.user.role === "provider" ? (
-                  <Link href="/my-services" className={navLinkClass}>
-                    My Services
-                  </Link>
-                ) : (
-                  <Link href="/allservices" className={navLinkClass}>
-                    All Services
-                  </Link>
-                )}
-                {session.user.role !== "admin" && (
-                  <Link href="/my-bookings" className={navLinkClass}>
-                    My Bookings
-                  </Link>
-                )}
+              <div className="hidden items-center gap-1 lg:flex">
+                <span className="mr-2 hidden text-xs text-muted-foreground xl:inline">
+                  Hi, {session.user.name.split(" ")[0]}
+                </span>
               </div>
               <NotificationBell />
               <Link
-                href="/profile"
-                className="hidden items-center gap-2 rounded-full border py-1 pr-3 pl-1 transition-colors hover:bg-muted sm:flex"
+                href={session.user.role === "provider" ? "/provider/profile" : session.user.role === "admin" ? "/profile" : "/customer/profile"}
+                className="hidden items-center gap-2 rounded-full border bg-white py-1 pl-1 pr-3 text-xs font-medium transition-colors hover:bg-zinc-50 dark:bg-zinc-800 dark:border-zinc-700 sm:flex"
+                aria-label="Profile"
               >
-                <span className="flex size-7 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                <span className="flex size-6 items-center justify-center rounded-full bg-zinc-900 text-[10px] font-semibold text-white dark:bg-white dark:text-zinc-900">
                   {session.user.name.slice(0, 2).toUpperCase()}
                 </span>
-                <span className="max-w-24 truncate text-sm font-medium">
-                  {session.user.name}
-                </span>
+                <span className="max-w-24 truncate">{session.user.name}</span>
               </Link>
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={handleSignOut}
                 aria-label="Sign out"
-                className="text-muted-foreground hover:text-destructive"
+                className="size-8 rounded-full text-muted-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800"
               >
-                <LogOut className="size-4" />
+                <LogOut className="size-3.5" />
               </Button>
               <MobileSidebar
                 role={session.user.role}
@@ -106,9 +154,9 @@ export function Navbar() {
               />
             </>
           ) : (
-            <div className="flex gap-3">
-              <div className="h-9 w-20 animate-pulse rounded-full bg-muted" />
-              <div className="h-9 w-24 animate-pulse rounded-full bg-muted" />
+            <div className="flex gap-2">
+              <div className="h-7 w-16 animate-pulse rounded-full bg-muted" />
+              <div className="h-7 w-20 animate-pulse rounded-full bg-muted" />
             </div>
           )}
         </div>

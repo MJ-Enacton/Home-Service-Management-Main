@@ -9,6 +9,13 @@ export function getSocket(): Socket {
       withCredentials: true,
       autoConnect: true,
       reconnection: true,
+      // Backoff: 5s initial -> caps at 60s (1/min) after ~3 failures.
+      // 1 min flat is too slow for mandatory chat after transient blip;
+      // exponential backoff gives spam reduction without 60s cold-start wait.
+      reconnectionDelay: 5000,
+      reconnectionDelayMax: 60000,
+      randomizationFactor: 0.5,
+      timeout: 20000,
     });
   }
   return socket;

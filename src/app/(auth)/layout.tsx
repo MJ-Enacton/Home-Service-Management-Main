@@ -1,32 +1,28 @@
-import Link from "next/link";
-import { Wrench } from "lucide-react";
-
-import { AuthBrandPanel } from "@/components/auth/AuthBrandPanel";
-
 export default function AuthLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen bg-muted/40">
-      <AuthBrandPanel />
+    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-[#fcfcf9] px-4 py-8 dark:bg-zinc-950 md:px-6 md:py-10">
+      {/* Home hero glows — almost-white with soft pastel */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -left-[18%] top-[8%] size-[720px] rounded-full bg-[#e6efff]/55 blur-[110px] dark:bg-blue-900/15"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-[16%] top-[12%] size-[680px] rounded-full bg-[#fff6cc]/55 blur-[110px] dark:bg-amber-900/12"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-[52%] h-[420px] w-[900px] -translate-x-1/2 rounded-full bg-white/70 blur-[50px] dark:bg-zinc-900/40"
+      />
 
-      <main className="relative flex flex-1 flex-col">
-        {/* Mobile logo */}
-        <div className="flex items-center justify-center pt-8 lg:hidden">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="rounded-lg bg-primary p-1.5">
-              <Wrench className="size-5 text-primary-foreground" />
-            </div>
-            <span className="text-xl font-bold tracking-tight">HandyHub</span>
-          </Link>
-        </div>
-
-        <div className="flex flex-1 items-center justify-center p-4 md:p-8">
-          <div className="w-full max-w-md">{children}</div>
-        </div>
-      </main>
+      <div className="relative w-full max-w-md">
+        {children}
+        <p className="mt-6 text-center text-xs text-muted-foreground">Secure · Trusted by 1000+ homeowners</p>
+      </div>
     </div>
   );
 }

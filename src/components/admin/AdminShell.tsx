@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/services", label: "Services", icon: Wrench },
-  { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/customers", label: "Customers", icon: Users },
   { href: "/admin/providers", label: "Providers", icon: HardHat },
   { href: "/admin/revenue", label: "Revenue", icon: Wallet },
 ];
@@ -170,7 +170,7 @@ export function AdminShell({ children, user }: AdminShellProps) {
         </div>
       )}
 
-      <main className="min-w-0 flex-1 px-4 pt-[4.5rem] pb-8 md:ml-60 md:px-6 md:pt-8">
+      <main className="min-w-0 flex-1 px-4 pt-18 pb-8 md:ml-60 md:px-6 md:pt-8">
         {children}
       </main>
     </div>

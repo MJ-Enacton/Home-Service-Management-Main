@@ -22,6 +22,20 @@
       "when": 1788172879509,
       "tag": "0002_dapper_grandmaster",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788254965791,
+      "tag": "0003_heavy_toxin",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788330735660,
+      "tag": "0004_sloppy_skreet",
+      "breakpoints": true
     }
   ]
 }

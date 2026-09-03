@@ -11,7 +11,6 @@
  *   cats      comma-separated category slugs, e.g. "plumbing,electrical"
  *   min,max   price range in whole dollars (inclusive)
  *   rating    1-5 minimum average rating (0/absent = none)
- *   verified  "1" to show verified providers only
  *   sort      recommended | price-asc | price-desc | rating
  *   page      1-based page index
  */
@@ -34,7 +33,6 @@ export interface BrowseState {
   minDollars: number | null;
   maxDollars: number | null;
   minRating: number;
-  verifiedOnly: boolean;
   sort: SortKey;
 }
 
@@ -45,7 +43,6 @@ export interface RawSearchParams {
   min?: string;
   max?: string;
   rating?: string;
-  verified?: string;
   sort?: string;
   page?: string;
 }
@@ -77,7 +74,6 @@ export function parseBrowseParams(
   const minParam = getParam(sp, "min");
   const maxParam = getParam(sp, "max");
   const ratingParam = getParam(sp, "rating");
-  const verifiedParam = getParam(sp, "verified");
   const pageParam = getParam(sp, "page");
 
   return {
@@ -86,7 +82,6 @@ export function parseBrowseParams(
     minDollars: minParam !== null && minParam !== "" ? Number(minParam) : null,
     maxDollars: maxParam !== null && maxParam !== "" ? Number(maxParam) : null,
     minRating: ratingParam ? Number(ratingParam) : 0,
-    verifiedOnly: verifiedParam === "1",
     sort,
     page: Math.max(1, Number.parseInt(pageParam ?? "1", 10) || 1),
   };
@@ -102,7 +97,6 @@ export function browseStateToQuery(
   if (state.minDollars !== null) params.set("min", String(state.minDollars));
   if (state.maxDollars !== null) params.set("max", String(state.maxDollars));
   if (state.minRating > 0) params.set("rating", String(state.minRating));
-  if (state.verifiedOnly) params.set("verified", "1");
   params.set("sort", state.sort);
   params.set("page", String(state.page ?? 1));
   return params;

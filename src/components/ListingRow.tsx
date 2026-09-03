@@ -1,11 +1,5 @@
-import {
-  Calendar,
-  Clock,
-  Hammer,
-  MapPin,
-  ShieldCheck,
-  Star,
-} from "lucide-react";
+/* eslint-disable @next/next/no-img-element */
+import { Calendar, Clock, Hammer, MapPin, Star } from "lucide-react";
 import Link from "next/link";
 import { enumLabel, formatCents, pricingUnitLabel } from "@/lib/format";
 import type { ServiceListingCard } from "@/types/service";
@@ -17,24 +11,24 @@ export default function ListingRow({
   listing: ServiceListingCard;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
+  const showImage = Boolean(listing.hasImage) && !imageFailed;
 
   return (
     <Link
       href={`/services/${listing.id}`}
-      className="group flex gap-4 overflow-hidden rounded-xl border bg-card p-4 shadow-sm transition-all hover:shadow-md"
+      className="group flex gap-3 overflow-hidden rounded-xl border bg-white p-3 transition hover:border-zinc-300 dark:bg-zinc-900 dark:border-zinc-800"
     >
-      <div className="relative w-40 shrink-0 overflow-hidden rounded-lg sm:w-52">
-        {imageFailed ? (
-          <div className="flex h-44 w-full items-center justify-center bg-linear-to-br from-blue-50 to-indigo-100 dark:from-blue-950/40 dark:to-indigo-950/40">
-            <Hammer className="size-10 text-blue-300 dark:text-blue-700" />
+      <div className="relative w-40 shrink-0 overflow-hidden rounded-lg bg-zinc-50 sm:w-48 dark:bg-zinc-800">
+        {!showImage ? (
+          <div className="flex h-28 w-full items-center justify-center sm:h-full">
+            <Hammer className="size-5 text-zinc-400" />
           </div>
         ) : (
-          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={`/api/services/${listing.id}/image`}
             alt={listing.title}
             onError={() => setImageFailed(true)}
-            className="h-28 w-full object-cover transition-transform duration-300 group-hover:scale-[1.03] sm:h-full"
+            className="h-28 w-full object-cover sm:h-full"
             loading="lazy"
           />
         )}
@@ -49,12 +43,6 @@ export default function ListingRow({
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              {listing.isVerified && (
-                <span className="flex items-center gap-1 rounded-full bg-primary px-2.5 py-1 text-xs font-medium text-white shadow-sm">
-                  <ShieldCheck className="size-3.5" />
-                  Verified
-                </span>
-              )}
               <span className="flex items-center gap-1 text-sm">
                 <Star className="size-4 fill-amber-400 text-amber-400" />
                 <span className="font-semibold">

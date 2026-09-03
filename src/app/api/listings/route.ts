@@ -26,7 +26,6 @@ export async function GET(request: Request) {
           ? Math.round(state.maxDollars * 100)
           : undefined,
       minRating: state.minRating > 0 ? state.minRating : undefined,
-      verifiedOnly: state.verifiedOnly || undefined,
       search: state.q || undefined,
     },
     sort: state.sort,

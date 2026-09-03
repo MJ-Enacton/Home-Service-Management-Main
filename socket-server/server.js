@@ -5,7 +5,8 @@ import { neon } from "@neondatabase/serverless";
 
 const SOCKET_PORT = Number(process.env.SOCKET_PORT) || 5000;
 const APP_PORT = Number(process.env.PORT) || 3000;
-const INTERNAL_SECRET = process.env.SOCKET_INTERNAL_SECRET || "dev-secret-change-in-production";
+const INTERNAL_SECRET =
+  process.env.SOCKET_INTERNAL_SECRET || "dev-secret-change-in-production";
 
 const allowedOrigins = process.env.SOCKET_CORS_ORIGIN
   ? process.env.SOCKET_CORS_ORIGIN.split(",").map((origin) => origin.trim())
@@ -97,7 +98,9 @@ const httpServer = createServer(async (req, res) => {
 
   if (req.method === "GET" && req.url === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "ok", connections: io.engine.clientsCount }));
+    res.end(
+      JSON.stringify({ status: "ok", connections: io.engine.clientsCount }),
+    );
     return;
   }
 
@@ -134,6 +137,46 @@ io.on("connection", (socket) => {
   const user = socket.data.user;
 
   console.log(`[socket] connected: user=${user.userId} (${user.role})`);
+
+  socket.on("chat:typing", async (payload) => {
+    try {
+      const bookingId = payload?.bookingId;
+      const isTyping = payload?.isTyping;
+      if (typeof bookingId !== "string" || typeof isTyping !== "boolean") return;
+
+      const rows = await sql`
+        SELECT
+          customer_id AS "customerId",
+          provider_id AS "providerId"
+        FROM bookings
+        WHERE id = ${bookingId}
+          AND status IN ('confirmed', 'in_progress')
+        LIMIT 1
+      `;
+
+      const booking = rows[0];
+      if (!booking) return;
+      if (
+        booking.customerId !== user.userId &&
+        booking.providerId !== user.userId
+      )
+        return;
+
+      const counterpartyId =
+        booking.customerId === user.userId
+          ? booking.providerId
+          : booking.customerId;
+
+      io.to(`user:${counterpartyId}`).emit("chat:typing", {
+        bookingId,
+        isTyping,
+        userId: user.userId,
+        userName: user.name,
+      });
+    } catch (error) {
+      console.error("[socket] typing relay failed:", error);
+    }
+  });
 
   socket.on("disconnect", (reason) => {
     console.log(`[socket] disconnected: user=${user.userId}, reason=${reason}`);

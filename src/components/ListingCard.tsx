@@ -1,8 +1,9 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { useState } from "react";
 import Link from "next/link";
-import { BadgeCheck, Clock, Hammer, MapPin, Star } from "lucide-react";
+import { Clock, Hammer, MapPin, Star } from "lucide-react";
 
 import type { ServiceListingCard as ListingCardData } from "@/types/service";
 import { enumLabel, formatCents, pricingUnitLabel } from "@/lib/format";
@@ -14,37 +15,32 @@ interface ListingCardProps {
 /** Grid card for a service listing (home "top rated" + browse pages). */
 export function ListingCard({ listing }: ListingCardProps) {
   const [imageFailed, setImageFailed] = useState(false);
+  const showImage = listing.hasImage && !imageFailed;
 
   return (
     <Link
       href={`/services/${listing.id}`}
-      className="group block overflow-hidden rounded-xl border bg-card shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg"
+      className="group block overflow-hidden rounded-xl border bg-white transition hover:border-zinc-300 hover:shadow-sm dark:bg-zinc-900 dark:border-zinc-800 dark:hover:border-zinc-700"
+      aria-label={`${listing.title} by ${listing.provider.name}`}
     >
       <div className="relative">
-        {imageFailed ? (
-          <div className="flex h-44 w-full items-center justify-center bg-linear-to-br from-blue-50 to-indigo-100 dark:from-blue-950/40 dark:to-indigo-950/40">
-            <Hammer className="size-10 text-blue-300 dark:text-blue-700" />
+        {!showImage ? (
+          <div className="flex h-44 w-full items-center justify-center bg-zinc-50 dark:bg-zinc-800">
+            <Hammer className="size-6 text-zinc-400" />
           </div>
         ) : (
-          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={`/api/services/${listing.id}/image`}
             alt={listing.title}
             onError={() => setImageFailed(true)}
-            className="h-44 w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+            className="h-44 w-full object-cover"
             loading="lazy"
           />
         )}
-        <div className="absolute inset-x-3 top-3 flex items-start justify-between">
+        <div className="absolute left-3 top-3">
           {listing.categoryName && (
-            <span className="rounded-full bg-white/95 px-2.5 py-1 text-xs font-medium text-zinc-800 shadow-sm dark:bg-zinc-900/95 dark:text-zinc-100">
+            <span className="rounded-full bg-white px-2 py-1 text-[11px] font-medium text-zinc-700 shadow-sm dark:bg-zinc-800 dark:text-zinc-200">
               {listing.categoryName}
-            </span>
-          )}
-          {listing.isVerified && (
-            <span className="flex items-center gap-1 rounded-full bg-primary px-2.5 py-1 text-xs font-medium text-white shadow-sm">
-              <BadgeCheck className="size-3.5" />
-              Verified
             </span>
           )}
         </div>

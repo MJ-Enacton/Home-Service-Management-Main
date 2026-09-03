@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { CalendarPlus, Loader2, Save, Trash2 } from "lucide-react";
 
-import { saveAvailability } from "@/app/profile/actions";
+import { saveAvailability } from "@/lib/profile/actions";
 import type { AvailabilityWindow } from "@/lib/availability";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,19 +30,22 @@ interface AvailabilityEditorProps {
 }
 
 export function AvailabilityEditor({ initial }: AvailabilityEditorProps) {
+  "use no memo";
   const [isPending, startTransition] = useTransition();
-  const [windows, setWindows] = useState<AvailabilityWindow[]>(initial);
+  const [windows, setWindows] = useState<AvailabilityWindow[]>(() =>
+    Array.isArray(initial) ? initial.filter((w): w is AvailabilityWindow => Boolean(w && w.startTime && w.endTime)) : [],
+  );
 
-  const byDay = (day: number) => windows.filter((w) => w.dayOfWeek === day);
+  const byDay = (day: number) => windows.filter((w) => w && w.dayOfWeek === day);
 
   function addWindow(day: number) {
     // Default new window to the first free 2-hour slot after existing ones.
-    const existing = byDay(day);
+    const existing = byDay(day).filter((w): w is AvailabilityWindow => Boolean(w?.endTime));
     let startMinutes = 9 * 60;
     for (const window of existing) {
-      const [h, m] = window.endTime.split(":").map(Number);
+      const [h, m] = (window.endTime ?? "00:00").split(":").map(Number);
       const end = (h ?? 0) * 60 + (m ?? 0);
-      if (end > startMinutes) startMinutes = end;
+      if (Number.isFinite(end) && end > startMinutes) startMinutes = end;
     }
     const endMinutes = Math.min(23 * 60, startMinutes + 120);
     if (endMinutes <= startMinutes) {
@@ -77,11 +80,11 @@ export function AvailabilityEditor({ initial }: AvailabilityEditorProps) {
   }
 
   function handleSave() {
-    // Client-side validation mirroring the server schema.
+    // Client-side validation mirroring the server schema — defensive against undefined.
     for (const window of windows) {
-      if (window.startTime >= window.endTime) {
+      if (!window?.startTime || !window?.endTime || window.startTime >= window.endTime) {
         toast.add({
-          title: `${DAYS[window.dayOfWeek]}: end time must be after start time.`,
+          title: `${DAYS[window.dayOfWeek ?? 0]}: end time must be after start time.`,
           type: "error",
         });
         return;
@@ -123,10 +126,13 @@ export function AvailabilityEditor({ initial }: AvailabilityEditorProps) {
                 {dayWindows.length === 0 && (
                   <p className="text-sm text-muted-foreground">Closed</p>
                 )}
-                {dayWindows.map((window) => {
+                {dayWindows
+                  .filter((w): w is AvailabilityWindow => Boolean(w?.startTime && w?.endTime))
+                  .map((window) => {
                   const index = windows.indexOf(window);
+                  if (index === -1 || !window?.startTime) return null;
                   return (
-                    <div key={`${window.startTime}-${index}`} className="flex items-center gap-2">
+                    <div key={`${window.startTime}-${window.dayOfWeek}-${index}`} className="flex items-center gap-2">
                       <input
                         type="time"
                         value={window.startTime}

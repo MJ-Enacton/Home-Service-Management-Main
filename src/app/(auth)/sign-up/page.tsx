@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { Wrench } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -28,7 +30,8 @@ import SocialSignInButton from "../components/SocialSignInButton";
 export default function SignUpPage() {
   const router = useRouter();
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [role, setRole] = useState<string>("customer");
+  const [role, setRole] = useState<"customer" | "provider">("customer");
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -40,180 +43,129 @@ export default function SignUpPage() {
     const password = formData.get("password")?.toString();
     const contact = formData.get("contact")?.toString();
     const address = formData.get("address")?.toString();
-    const role = formData.get("role")?.toString();
 
-    const result = signUpSchema.safeParse({
-      name,
-      email,
-      password,
-      contact,
-      address,
-      role,
-    });
+    const result = signUpSchema.safeParse({ name, email, password, contact, address, role });
 
     if (!result.success) {
       const fieldErrors: Record<string, string> = {};
       result.error.issues.forEach((issue) => {
-        if (issue.path[0]) {
-          fieldErrors[issue.path[0].toString()] = issue.message;
-        }
+        if (issue.path[0]) fieldErrors[issue.path[0].toString()] = issue.message;
       });
       setErrors(fieldErrors);
       return;
     }
 
-    // Handle valid submission with better-auth here
+    setIsLoading(true);
     const { data, error } = await authClient.signUp.email({
       email: email!,
       password: password!,
       name: name!,
       contact: contact!,
       address: address!,
-      role: role,
+      role,
     });
+    setIsLoading(false);
 
     if (error) {
-      alert(error.message);
+      setErrors({ email: error.message ?? "Failed to create account" });
       return;
     }
 
-    // Usually better-auth auto logs you in after signup
     if (data) {
-      if (role === "provider") {
-        router.push("/provider/dashboard");
-      } else {
-        router.push("/");
-      }
+      if (role === "provider") router.push("/provider/dashboard");
+      else router.push("/");
     }
   };
 
   return (
-    <Card className="w-full shadow-xl shadow-zinc-900/5 dark:shadow-black/20">
-      <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl font-bold tracking-tight">
-          Create an account
-        </CardTitle>
-        <CardDescription>
-          Join HandyHub as a customer or a service provider
-        </CardDescription>
+    <Card className="w-full rounded-2xl border bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] dark:bg-zinc-900 dark:border-zinc-800">
+      <CardHeader className="space-y-3 pb-4">
+        <Link href="/" className="inline-flex items-center gap-2">
+          <span className="flex size-7 items-center justify-center rounded-lg bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
+            <Wrench className="size-3.5" />
+          </span>
+          <span className="text-sm font-bold tracking-tight">HandyHub</span>
+        </Link>
+        <div className="space-y-1.5 pt-1">
+          <CardTitle className="text-xl font-semibold tracking-tight">Create an account</CardTitle>
+          <CardDescription className="text-sm leading-relaxed">Join HandyHub as a customer or provider — same account, different tools.</CardDescription>
+        </div>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Full Name</Label>
-              <Input
-                id="name"
-                name="name"
-                placeholder="John Doe"
-                className="bg-muted/50"
-              />
-              {errors.name && (
-                <p className="text-sm text-red-500">{errors.name}</p>
-              )}
+      <CardContent className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="name" className="text-xs font-medium">Full name</Label>
+              <Input id="name" name="name" placeholder="Alex Morgan" autoComplete="name" aria-invalid={Boolean(errors.name)} className="h-9 rounded-xl bg-white" disabled={isLoading} />
+              {errors.name && <p role="alert" className="text-xs text-destructive">{errors.name}</p>}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="contact">Contact Number</Label>
-              <Input
-                id="contact"
-                name="contact"
-                placeholder="+1 (555) 000-0000"
-                className="bg-muted/50"
-              />
-              {errors.contact && (
-                <p className="text-sm text-red-500">{errors.contact}</p>
-              )}
+            <div className="space-y-1.5">
+              <Label htmlFor="contact" className="text-xs font-medium">Contact</Label>
+              <Input id="contact" name="contact" placeholder="+1 (555) 000-0000" autoComplete="tel" aria-invalid={Boolean(errors.contact)} className="h-9 rounded-xl bg-white" disabled={isLoading} />
+              {errors.contact && <p role="alert" className="text-xs text-destructive">{errors.contact}</p>}
             </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              name="email"
-              type="email"
-              placeholder="m@example.com"
-              className="bg-muted/50"
-            />
-            {errors.email && (
-              <p className="text-sm text-red-500">{errors.email}</p>
-            )}
+
+          <div className="space-y-1.5">
+            <Label htmlFor="email" className="text-xs font-medium">Email</Label>
+            <Input id="email" name="email" type="email" placeholder="you@example.com" autoComplete="email" aria-invalid={Boolean(errors.email)} className="h-9 rounded-xl bg-white" disabled={isLoading} />
+            {errors.email && <p role="alert" className="text-xs text-destructive">{errors.email}</p>}
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              name="password"
-              type="password"
-              className="bg-muted/50"
-            />
-            {errors.password && (
-              <p className="text-sm text-red-500">{errors.password}</p>
-            )}
+
+          <div className="space-y-1.5">
+            <Label htmlFor="password" className="text-xs font-medium">Password</Label>
+            <Input id="password" name="password" type="password" autoComplete="new-password" aria-invalid={Boolean(errors.password)} className="h-9 rounded-xl bg-white" disabled={isLoading} />
+            {errors.password && <p role="alert" className="text-xs text-destructive">{errors.password}</p>}
+            <p className="text-xs text-muted-foreground">At least 8 characters</p>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="address">Address</Label>
-            <Input
-              id="address"
-              name="address"
-              placeholder="123 Main St, City, State"
-              className="bg-muted/50"
-            />
-            {errors.address && (
-              <p className="text-sm text-red-500">{errors.address}</p>
-            )}
+
+          <div className="space-y-1.5">
+            <Label htmlFor="address" className="text-xs font-medium">Address</Label>
+            <Input id="address" name="address" placeholder="123 Main St, City, State" autoComplete="street-address" aria-invalid={Boolean(errors.address)} className="h-9 rounded-xl bg-white" disabled={isLoading} />
+            {errors.address && <p role="alert" className="text-xs text-destructive">{errors.address}</p>}
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="role">Role</Label>
-            <Select
-              value={role}
-              onValueChange={(val) => val && setRole(val)}
-              name="role"
-            >
-              <SelectTrigger className="bg-muted/50">
+
+          <div className="space-y-1.5">
+            <Label htmlFor="role" className="text-xs font-medium">I want to</Label>
+            <Select value={role} onValueChange={(val) => val && setRole(val as "customer" | "provider")} name="role">
+              <SelectTrigger className="h-9 rounded-xl bg-white" aria-label="Role">
                 <SelectValue placeholder="Select your role" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="customer">Customer</SelectItem>
-                <SelectItem value="provider">Provider</SelectItem>
+                <SelectItem value="customer">Book services — I need help at home</SelectItem>
+                <SelectItem value="provider">Offer services — I provide help</SelectItem>
               </SelectContent>
             </Select>
-            {errors.role && (
-              <p className="text-sm text-red-500">{errors.role}</p>
-            )}
+            {errors.role && <p role="alert" className="text-xs text-destructive">{errors.role}</p>}
           </div>
-          <Button
-            type="submit"
-            className="mt-2 w-full"
-          >
-            Create Account
+
+          <Button type="submit" className="h-9 w-full rounded-full bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-white dark:text-zinc-900" disabled={isLoading}>
+            {isLoading ? "Creating account…" : "Create account"}
           </Button>
+          <p className="text-center text-xs leading-relaxed text-muted-foreground">
+            By creating an account you agree to our Terms and Privacy Policy.
+          </p>
         </form>
 
         <div className="relative">
           <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t dark:border-zinc-800" />
+            <span className="w-full border-t" />
           </div>
-          <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-card px-2 text-muted-foreground">
-              Or continue with
-            </span>
+          <div className="relative flex justify-center">
+            <span className="bg-white px-3 text-xs text-muted-foreground dark:bg-zinc-900">or</span>
           </div>
         </div>
 
         <SocialSignInButton />
       </CardContent>
-      <CardFooter className="flex flex-col space-y-4">
-        <div className="text-center text-sm text-muted-foreground">
+      <CardFooter className="justify-center rounded-b-2xl border-t bg-zinc-50/50 py-4 dark:border-zinc-800 dark:bg-zinc-900/50">
+        <p className="text-sm text-muted-foreground">
           Already have an account?{" "}
-          <Link
-            href="/sign-in"
-            className="font-medium text-primary hover:underline"
-          >
+          <Link href="/sign-in" className="font-medium text-zinc-900 hover:underline dark:text-white">
             Sign in
           </Link>
-        </div>
+        </p>
       </CardFooter>
     </Card>
   );
 }
-

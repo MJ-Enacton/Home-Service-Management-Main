@@ -13,7 +13,7 @@ function Badge({
       data-slot="badge"
       data-variant={variant}
       className={cn(
-        "inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border px-1.5 py-0.5 text-xs font-medium whitespace-nowrap",
+        "inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-full border px-2.5 py-0.5 text-xs font-medium whitespace-nowrap",
         variant === "default" &&
           "border-transparent bg-primary text-primary-foreground",
         variant === "secondary" &&
@@ -21,8 +21,8 @@ function Badge({
         variant === "destructive" &&
           "border-transparent bg-destructive text-white",
         variant === "success" &&
-          "border-transparent bg-green-600 text-white",
-        variant === "outline" && "text-foreground",
+          "border-transparent bg-emerald-600 text-white",
+        variant === "outline" && "bg-white text-foreground",
         className
       )}
       {...props}

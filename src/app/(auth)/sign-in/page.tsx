@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { Wrench } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -20,6 +22,7 @@ import SocialSignInButton from "../components/SocialSignInButton";
 
 export default function SignInPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -29,27 +32,23 @@ export default function SignInPage() {
     const formData = new FormData(e.currentTarget);
     const email = formData.get("email")?.toString();
     const password = formData.get("password")?.toString();
-    const result = signInSchema.safeParse({
-      email,
-      password,
-    });
+    const result = signInSchema.safeParse({ email, password });
 
     if (!result.success) {
       const fieldErrors: Record<string, string> = {};
       result.error.issues.forEach((issue) => {
-        if (issue.path[0]) {
-          fieldErrors[issue.path[0].toString()] = issue.message;
-        }
+        if (issue.path[0]) fieldErrors[issue.path[0].toString()] = issue.message;
       });
       setErrors(fieldErrors);
       return;
     }
 
-    // Handle valid submission with better-auth here
+    setIsLoading(true);
     const { data, error } = await authClient.signIn.email({
       email: email!,
       password: password!,
     });
+    setIsLoading(false);
 
     if (error) {
       setErrors({ email: error.message! });
@@ -57,88 +56,92 @@ export default function SignInPage() {
     }
 
     if (data?.user) {
-      // Assuming user role is available in the data returned by better-auth
-      // Note: You may need to configure better-auth to return custom fields like 'role'
-      const userRole = data.user.role || "customer";
-
-      if (userRole === "provider") {
-        router.push("/provider/dashboard"); // Or wherever the provider page is
-      } else {
-        router.push("/");
-      }
+      const userRole = (data.user as { role?: string }).role || "customer";
+      if (userRole === "provider") router.push("/provider/dashboard");
+      else router.push("/");
     }
   };
 
   return (
-    <Card className="w-full shadow-xl shadow-zinc-900/5 dark:shadow-black/20">
-      <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl font-bold tracking-tight">
-          Welcome back
-        </CardTitle>
-        <CardDescription>
-          Enter your email and password to access your account
-        </CardDescription>
+    <Card className="w-full rounded-2xl border bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] dark:bg-zinc-900 dark:border-zinc-800">
+      <CardHeader className="space-y-3 pb-4">
+        <Link href="/" className="inline-flex items-center gap-2">
+          <span className="flex size-7 items-center justify-center rounded-lg bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
+            <Wrench className="size-3.5" />
+          </span>
+          <span className="text-sm font-bold tracking-tight">HandyHub</span>
+        </Link>
+        <div className="space-y-1.5 pt-1">
+          <CardTitle className="text-xl font-semibold tracking-tight">Welcome back</CardTitle>
+          <CardDescription className="text-sm leading-relaxed">Sign in to manage bookings and services</CardDescription>
+        </div>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+      <CardContent className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+          <div className="space-y-1.5">
+            <Label htmlFor="email" className="text-xs font-medium">Email</Label>
             <Input
               id="email"
               name="email"
               type="email"
-              placeholder="m@example.com"
-              className="bg-muted/50"
+              placeholder="you@example.com"
+              autoComplete="email"
+              aria-invalid={Boolean(errors.email)}
+              aria-describedby={errors.email ? "email-error" : undefined}
+              className="h-9 rounded-xl bg-white"
+              disabled={isLoading}
             />
             {errors.email && (
-              <p className="text-sm text-red-500">{errors.email}</p>
+              <p id="email-error" role="alert" className="text-xs text-destructive">{errors.email}</p>
             )}
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password" className="text-xs font-medium">Password</Label>
+              <Link href="#" className="text-xs text-muted-foreground hover:text-foreground">Forgot?</Link>
+            </div>
             <Input
               id="password"
               name="password"
               type="password"
-              className="bg-muted/50"
+              autoComplete="current-password"
+              aria-invalid={Boolean(errors.password)}
+              aria-describedby={errors.password ? "password-error" : undefined}
+              className="h-9 rounded-xl bg-white"
+              disabled={isLoading}
             />
             {errors.password && (
-              <p className="text-sm text-red-500">{errors.password}</p>
+              <p id="password-error" role="alert" className="text-xs text-destructive">{errors.password}</p>
             )}
           </div>
           <Button
             type="submit"
-            className="w-full"
+            className="h-9 w-full rounded-full bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-white dark:text-zinc-900"
+            disabled={isLoading}
           >
-            Sign In
+            {isLoading ? "Signing in…" : "Sign in"}
           </Button>
         </form>
 
         <div className="relative">
           <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t dark:border-zinc-800" />
+            <span className="w-full border-t" />
           </div>
-          <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-card px-2 text-muted-foreground">
-              Or continue with
-            </span>
+          <div className="relative flex justify-center">
+            <span className="bg-white px-3 text-xs text-muted-foreground dark:bg-zinc-900">or</span>
           </div>
         </div>
 
         <SocialSignInButton />
       </CardContent>
-      <CardFooter className="flex flex-col space-y-4">
-        <div className="text-center text-sm text-muted-foreground">
+      <CardFooter className="justify-center rounded-b-2xl border-t bg-zinc-50/50 py-4 dark:border-zinc-800 dark:bg-zinc-900/50">
+        <p className="text-sm text-muted-foreground">
           Don&apos;t have an account?{" "}
-          <Link
-            href="/sign-up"
-            className="font-medium text-primary hover:underline"
-          >
-            Sign up
+          <Link href="/sign-up" className="font-medium text-zinc-900 hover:underline dark:text-white">
+            Create account
           </Link>
-        </div>
+        </p>
       </CardFooter>
     </Card>
   );
 }
-

@@ -48,9 +48,12 @@ export const listingSchema = z.object({
   // Pricing is required unless tiers are provided
   pricingType: z.enum(pricingTypeEnum.enumValues).optional(),
   basePriceCents: moneyCents.optional(),
-  location: z.string().max(120).nullish(),
-  estimatedDuration: z.string().max(60).nullish(),
-  tags: z.array(z.string().min(1).max(30)).max(10).default([]),
+  location: z.string().min(2, "Service area is required.").max(120),
+  estimatedDuration: z.string().min(2, "Hours is required.").max(60),
+  tags: z
+    .array(z.string().min(1).max(30))
+    .min(1, "At least one tag is required.")
+    .max(10),
 });
 
 export type ListingInput = z.infer<typeof listingSchema>;

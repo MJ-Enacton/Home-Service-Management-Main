@@ -80,6 +80,8 @@ export const listingStatusEnum = pgEnum("listing_status", [
   "active",
   "inactive",
   "draft",
+  "pending",
+  "rejected",
 ]);
 
 // ============================================================
@@ -208,7 +210,6 @@ export const providerProfiles = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
     bio: text("bio"),
     yearsExperience: integer("years_experience").default(0).notNull(),
-    isVerified: boolean("is_verified").default(false).notNull(),
     serviceAreas: jsonb("service_areas").$type<string[]>(),
     avatarData: text("avatar_data"),
     avatarMime: text("avatar_mime"),
@@ -242,7 +243,6 @@ export const serviceListings = pgTable(
     status: listingStatusEnum("status").default("active").notNull(),
     location: text("location"),
     estimatedDuration: text("estimated_duration"), // e.g., "2-4 hours"
-    isVerified: boolean("is_verified").default(false).notNull(),
     tags: jsonb("tags").$type<string[]>(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
@@ -710,13 +710,16 @@ export const providerAvailabilityRelations = relations(
   }),
 );
 
-export const bookingMessagesRelations = relations(bookingMessages, ({ one }) => ({
-  booking: one(bookings, {
-    fields: [bookingMessages.bookingId],
-    references: [bookings.id],
+export const bookingMessagesRelations = relations(
+  bookingMessages,
+  ({ one }) => ({
+    booking: one(bookings, {
+      fields: [bookingMessages.bookingId],
+      references: [bookings.id],
+    }),
+    sender: one(user, {
+      fields: [bookingMessages.senderId],
+      references: [user.id],
+    }),
   }),
-  sender: one(user, {
-    fields: [bookingMessages.senderId],
-    references: [user.id],
-  }),
-}));
+);

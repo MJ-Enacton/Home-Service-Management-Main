@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Popover } from "@base-ui/react";
 import { Bell } from "lucide-react";
 import { getSocket } from "@/lib/socket/client";
+import { useSession } from "@/lib/auth-client";
 
 interface RecentNotification {
   id: string;
@@ -27,6 +28,9 @@ function timeAgo(iso: string) {
 }
 
 export function NotificationBell() {
+  const { data: session } = useSession();
+  const role = session?.user?.role;
+  const notificationsHref = role === "provider" ? "/provider/notifications" : role === "customer" ? "/customer/notifications" : "/customer/notifications";
   const [open, setOpen] = React.useState(false);
   const [unreadCount, setUnreadCount] = React.useState(0);
   const [items, setItems] = React.useState<RecentNotification[]>([]);
@@ -118,7 +122,7 @@ export function NotificationBell() {
                 {items.map((item) => (
                   <li key={item.id}>
                     <Link
-                      href="/notifications"
+                      href={notificationsHref}
                       onClick={() => setOpen(false)}
                       className="flex flex-col gap-0.5 rounded-md px-3 py-2 transition-colors hover:bg-accent hover:text-accent-foreground"
                     >
@@ -141,7 +145,7 @@ export function NotificationBell() {
             )}
             <div className="border-t border-border p-1">
               <Link
-                href="/notifications"
+                href={notificationsHref}
                 onClick={() => setOpen(false)}
                 className="block rounded-md px-3 py-2 text-center text-sm font-medium text-blue-600 transition-colors hover:bg-blue-50 hover:text-blue-700 dark:text-blue-400 dark:hover:bg-blue-950/50"
               >

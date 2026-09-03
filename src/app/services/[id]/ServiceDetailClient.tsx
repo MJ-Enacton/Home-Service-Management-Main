@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
-  BadgeCheck,
   Calendar,
   CheckCircle2,
   ChevronLeft,
@@ -13,7 +12,6 @@ import {
   CreditCard,
   Loader2,
   MapPin,
-  ShieldCheck,
   Star,
   Wallet,
 } from "lucide-react";
@@ -275,10 +273,10 @@ export function ServiceDetailClient({
               </p>
             </div>
             <div className="mt-2 flex gap-3">
-              <Link href="/my-bookings">
+              <Link href="/customer/my-bookings">
                 <Button>View My Bookings</Button>
               </Link>
-              <Link href="/allservices">
+              <Link href="/services">
                 <Button variant="outline">Browse More Services</Button>
               </Link>
             </div>
@@ -290,14 +288,14 @@ export function ServiceDetailClient({
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 md:px-6">
-      {/* Hero header band */}
-      <section className="-mx-4 border-b bg-muted/40 px-4 py-8 md:-mx-6 md:px-6 md:py-10">
+      {/* Hero — clean, content-first */}
+      <section className="border-b bg-white px-4 py-6 md:px-6 md:py-8 dark:bg-zinc-900 dark:border-zinc-800">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex-1">
             <BackButton label="All Services" className="mb-1 -ml-3" />
             <nav className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
-              <Link href="/allservices" className="hover:text-foreground">
-                All Services
+              <Link href="/services" className="hover:text-foreground">
+                Services
               </Link>
               <ChevronRight className="size-3" />
               <span className="truncate text-foreground">{listing.title}</span>
@@ -313,9 +311,6 @@ export function ServiceDetailClient({
                   {listing.provider.name.slice(0, 2).toUpperCase()}
                 </span>
                 {listing.provider.name}
-                {listing.provider.isVerified && (
-                  <BadgeCheck className="size-4 text-primary" />
-                )}
               </span>
               <span className="flex items-center gap-1">
                 <Star className="size-4 fill-amber-400 text-amber-400" />
@@ -351,12 +346,6 @@ export function ServiceDetailClient({
             )}
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              {listing.isVerified && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-                  <ShieldCheck className="size-3.5" />
-                  Verified provider
-                </span>
-              )}
               <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
                 {enumLabel(listing.categoryName ?? "") || "Service"}
               </span>
@@ -403,15 +392,15 @@ export function ServiceDetailClient({
               <AlertCircle className="size-4 shrink-0" />
               This is your own listing &mdash; you can&apos;t book it. Manage
               it from{" "}
-              <Link href="/my-services" className="font-semibold underline">
+              <Link href="/provider/my-services" className="font-semibold underline">
                 My Services
               </Link>
               .
             </div>
           )}
 
-          {/* Step indicator */}
-          <ol className="mb-8 flex items-center gap-2">
+          {/* Step indicator — compact, accessible */}
+          <ol className="mb-6 flex items-center gap-2" aria-label="Booking steps">
             {STEPS.map((label, index) => {
               const number = index + 1;
               const isActive = number === step;
@@ -419,28 +408,13 @@ export function ServiceDetailClient({
               return (
                 <li key={label} className="flex flex-1 items-center gap-2">
                   <span
-                    className={`flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
-                      isActive
-                        ? "bg-primary text-white"
-                        : isDone
-                          ? "bg-primary/15 text-primary"
-                          : "border bg-muted text-muted-foreground"
-                    }`}
+                    className={`flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ring-1 ${isActive ? "bg-zinc-900 text-white ring-zinc-900 dark:bg-white dark:text-zinc-900" : isDone ? "bg-zinc-100 text-zinc-700 ring-zinc-200 dark:bg-zinc-800" : "bg-white text-muted-foreground ring-zinc-200 dark:bg-zinc-900"}`}
+                    aria-current={isActive ? "step" : undefined}
                   >
                     {number}
                   </span>
-                  <span
-                    className={`hidden text-sm font-medium sm:block ${
-                      isActive
-                        ? "text-foreground"
-                        : "text-muted-foreground"
-                    }`}
-                  >
-                    {label}
-                  </span>
-                  {number < STEPS.length && (
-                    <span className="mx-1 hidden h-px flex-1 bg-border sm:block" />
-                  )}
+                  <span className={`hidden text-xs font-medium sm:block ${isActive ? "text-foreground" : "text-muted-foreground"}`}>{label}</span>
+                  {number < STEPS.length && <span className="mx-1 hidden h-px flex-1 bg-zinc-200 dark:bg-zinc-800 sm:block" aria-hidden />}
                 </li>
               );
             })}
@@ -926,7 +900,6 @@ export function ServiceDetailClient({
 
             <Card className="bg-muted/40">
               <CardContent className="flex items-start gap-2.5 p-4 text-xs text-muted-foreground">
-                <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" />
                 You won&apos;t be charged until the provider confirms the
                 appointment. Free cancellation any time before work begins.
               </CardContent>
