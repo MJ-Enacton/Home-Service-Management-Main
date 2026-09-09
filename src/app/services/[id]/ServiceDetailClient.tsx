@@ -17,7 +17,12 @@ import {
 } from "lucide-react";
 
 import type { ServiceListingCard, TierOption } from "@/types/service";
-import type { ListingReviewSummary } from "@/lib/db/queries/listings";
+import type {
+  ListingImageSummary,
+  ListingReviewSummary,
+  RatingBreakdownRow,
+} from "@/lib/db/queries/listings";
+import { ReviewsSection } from "@/components/reviews/ReviewsSection";
 import type { Slot } from "@/lib/availability";
 import {
   enumLabel,
@@ -25,7 +30,9 @@ import {
   pricingUnitLabel,
 } from "@/lib/format";
 import { computePriceBreakdown } from "@/lib/pricing";
+import { getBookingWindow, isDateWithinBookingWindow } from "@/lib/booking-window";
 import { bookService, getScheduleOptions } from "./actions";
+import { CldImage } from "next-cloudinary";
 import { BackButton } from "@/components/BackButton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -37,15 +44,17 @@ import { Checkbox } from "@/components/ui/checkbox";
 interface ServiceDetailClientProps {
   listing: ServiceListingCard;
   tiers: TierOption[];
-  imageCount: number;
+  images: ListingImageSummary[];
   providerBio: string | null;
   reviews: ListingReviewSummary[];
+  ratingBreakdown: RatingBreakdownRow[];
   viewerAddress: string | null;
   viewerUser: {
     id: string;
     name: string;
     email: string;
     contact?: string | null;
+    role?: string | null;
   } | null;
   isOwner: boolean;
   isAuthenticated: boolean;
@@ -63,12 +72,50 @@ const EMPTY_DETAILS = {
   contactPhone: "",
 };
 
+/** Single gallery photo (Cloudinary-only; renders nothing without a publicId). */
+function GalleryImage({
+  image,
+  index,
+  title,
+  className,
+  sizes,
+  width,
+  height,
+}: {
+  image: ListingImageSummary;
+  index: number;
+  title: string;
+  className?: string;
+  sizes?: string;
+  width: number;
+  height: number;
+}) {
+  const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+  const alt = image.altText ?? `${title} photo ${index + 1}`;
+
+  if (!image.publicId || !cloudName) return null;
+
+  return (
+    <CldImage
+      src={image.publicId}
+      width={width}
+      height={height}
+      alt={alt}
+      crop="fill"
+      gravity="auto"
+      sizes={sizes}
+      className={className}
+    />
+  );
+}
+
 export function ServiceDetailClient({
   listing,
   tiers,
-  imageCount,
+  images,
   providerBio,
   reviews,
+  ratingBreakdown,
   viewerAddress,
   viewerUser,
   isOwner,
@@ -105,8 +152,19 @@ export function ServiceDetailClient({
     : listing.startingPriceCents;
   const pricing = computePriceBreakdown(baseCents);
 
+  const bookingWindow = getBookingWindow();
+
   /** Reset schedule-dependent state and kick off slot loading on date change. */
   function handleDateChange(value: string) {
+    setError("");
+    if (value && !isDateWithinBookingWindow(value)) {
+      setError("Bookings are allowed only within the next 7 days (today included).");
+      setDate("");
+      setSlotTime("");
+      setSlots(null);
+      setLoadingSlots(false);
+      return;
+    }
     setDate(value);
     setSlotTime("");
     if (!value) {
@@ -150,6 +208,10 @@ export function ServiceDetailClient({
     }
     if (step === 2 && !isUrgent && (!date || !slotTime)) {
       setError("Please pick a date and an available time slot.");
+      return;
+    }
+    if (step === 2 && !isUrgent && date && !isDateWithinBookingWindow(date)) {
+      setError("Bookings are allowed only within the next 7 days (today included).");
       return;
     }
     setStep((prev) => Math.min(3, prev + 1));
@@ -255,7 +317,7 @@ export function ServiceDetailClient({
   /* ---------------- Confirmation ---------------- */
   if (bookingNumber) {
     return (
-      <main className="mx-auto w-full max-w-3xl px-4 py-16 md:px-6">
+      <main className="mx-auto w-full max-w-3xl px-4 pt-6 pb-16 md:px-6 md:pt-8">
         <Card className="overflow-hidden">
           <CardContent className="flex flex-col items-center gap-4 py-14 text-center">
             <div className="rounded-full bg-green-100 p-4 dark:bg-green-950/50">
@@ -273,7 +335,13 @@ export function ServiceDetailClient({
               </p>
             </div>
             <div className="mt-2 flex gap-3">
-              <Link href="/customer/my-bookings">
+              <Link
+                href={
+                  viewerUser?.role === "provider"
+                    ? "/provider/my-bookings"
+                    : "/customer/my-bookings"
+                }
+              >
                 <Button>View My Bookings</Button>
               </Link>
               <Link href="/services">
@@ -287,12 +355,14 @@ export function ServiceDetailClient({
   }
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 md:px-6">
-      {/* Hero — clean, content-first */}
-      <section className="border-b bg-white px-4 py-6 md:px-6 md:py-8 dark:bg-zinc-900 dark:border-zinc-800">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+    <main className="mx-auto w-full max-w-7xl px-4 pt-6 pb-12 md:px-6 md:pt-8">
+      {/* No overflow-hidden — it would break the sticky summary sidebar below. */}
+      <Card>
+        {/* Hero header */}
+        <div className="border-b px-5 py-4 sm:px-6">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex-1">
-            <BackButton label="All Services" className="mb-1 -ml-3" />
+            <BackButton label="All Services" href="/services" className="mb-1 -ml-3" />
             <nav className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
               <Link href="/services" className="hover:text-foreground">
                 Services
@@ -352,39 +422,43 @@ export function ServiceDetailClient({
             </div>
           </div>
 
-          {/* Gallery */}
-          {imageCount > 0 && (
+          {/* Gallery (Cloudinary via next-cloudinary) */}
+          {images.length > 0 && (
             <div className="shrink-0">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={`/api/services/${listing.id}/image`}
-                alt={listing.title}
+              <GalleryImage
+                image={images[0]!}
+                index={0}
+                title={listing.title}
                 className="h-48 w-full rounded-2xl object-cover shadow-md ring-1 ring-border lg:w-72"
+                sizes="(max-width: 1024px) 100vw, 300px"
+                width={576}
+                height={384}
               />
-              {imageCount > 1 && (
+              {images.length > 1 && (
                 <div className="mt-2 flex gap-2 overflow-x-auto">
-                  {Array.from(
-                    { length: Math.min(imageCount, 4) },
-                    (_, index) => (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        key={index}
-                        src={`/api/services/${listing.id}/image?i=${index}`}
-                        alt={`${listing.title} photo ${index + 1}`}
-                        className={`h-14 w-20 shrink-0 cursor-pointer rounded-lg object-cover ring-1 transition-opacity hover:opacity-80 ${
-                          index === 0 ? "ring-primary" : "ring-border"
-                        }`}
-                      />
-                    ),
-                  )}
+                  {images.slice(0, 4).map((image, index) => (
+                    <GalleryImage
+                      key={image.id}
+                      image={image}
+                      index={index}
+                      title={listing.title}
+                      className={`h-14 w-20 shrink-0 cursor-pointer rounded-lg object-cover ring-1 transition-opacity hover:opacity-80 ${
+                        index === 0 ? "ring-primary" : "ring-border"
+                      }`}
+                      sizes="80px"
+                      width={160}
+                      height={112}
+                    />
+                  ))}
                 </div>
               )}
             </div>
           )}
+          </div>
         </div>
-      </section>
 
-      <div className="grid gap-8 py-8 lg:grid-cols-[1fr_360px] lg:py-10">
+        <div className="bg-cream px-4 py-6 sm:px-5 md:px-6 dark:bg-zinc-800/60">
+          <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
         {/* Wizard column */}
         <div>
           {isOwner && (
@@ -429,7 +503,7 @@ export function ServiceDetailClient({
                   Create a free account to schedule an appointment with{" "}
                   {listing.provider.name}.
                 </p>
-                <Link href="/sign-in" className="mt-2">
+                <Link href={`/sign-in?next=/services/${listing.id}`} className="mt-2">
                   <Button>Sign In to Continue</Button>
                 </Link>
               </CardContent>
@@ -537,7 +611,15 @@ export function ServiceDetailClient({
                     </div>
 
                     <div className="flex justify-end">
-                      <Button onClick={goNext}>
+                      <Button
+                        onClick={goNext}
+                        disabled={isOwner}
+                        title={
+                          isOwner
+                            ? "You can't book your own listing"
+                            : undefined
+                        }
+                      >
                         Continue
                         <ChevronRight className="size-4" />
                       </Button>
@@ -600,10 +682,14 @@ export function ServiceDetailClient({
                             id="date"
                             type="date"
                             value={date}
-                            min={new Date().toISOString().split("T")[0]}
+                            min={bookingWindow.min}
+                            max={bookingWindow.max}
                             onChange={(event) => handleDateChange(event.target.value)}
                             className="w-fit bg-background"
                           />
+                          <p className="text-xs text-muted-foreground">
+                            Bookable dates: today through {bookingWindow.max} (7 days).
+                          </p>
                         </div>
 
                         {date && (
@@ -674,7 +760,15 @@ export function ServiceDetailClient({
                         <ChevronLeft className="size-4" />
                         Back
                       </Button>
-                      <Button onClick={goNext}>
+                      <Button
+                        onClick={goNext}
+                        disabled={isOwner}
+                        title={
+                          isOwner
+                            ? "You can't book your own listing"
+                            : undefined
+                        }
+                      >
                         Continue
                         <ChevronRight className="size-4" />
                       </Button>
@@ -808,7 +902,12 @@ export function ServiceDetailClient({
                       </Button>
                       <Button
                         onClick={() => void handlePay()}
-                        disabled={submitting || authorizing}
+                        disabled={submitting || authorizing || isOwner}
+                        title={
+                          isOwner
+                            ? "You can't book your own listing"
+                            : undefined
+                        }
                       >
                         {authorizing ? (
                           <>
@@ -843,12 +942,17 @@ export function ServiceDetailClient({
                 <h3 className="font-semibold">Booking summary</h3>
 
                 <div className="mt-4 flex gap-3">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`/api/services/${listing.id}/image`}
-                    alt={listing.title}
-                    className="h-16 w-16 shrink-0 rounded-lg object-cover ring-1 ring-border"
-                  />
+                  {images[0] && (
+                    <GalleryImage
+                      image={images[0]}
+                      index={0}
+                      title={listing.title}
+                      className="h-16 w-16 shrink-0 rounded-lg object-cover ring-1 ring-border"
+                      sizes="64px"
+                      width={128}
+                      height={128}
+                    />
+                  )}
                   <div className="min-w-0">
                     <p className="line-clamp-2 text-sm font-semibold">
                       {listing.title}
@@ -904,60 +1008,19 @@ export function ServiceDetailClient({
                 appointment. Free cancellation any time before work begins.
               </CardContent>
             </Card>
+            </div>
+          </aside>
           </div>
-        </aside>
-      </div>
 
-      {/* Reviews */}
-      {reviews.length > 0 && (
-        <section className="border-t py-8 lg:py-10">
-          <h2 className="text-xl font-bold tracking-tight">
-            Reviews
-            <span className="ml-2 text-sm font-medium text-muted-foreground">
-              {listing.ratingAvg !== null
-                ? `${listing.ratingAvg.toFixed(1)} · ${listing.ratingCount} review${listing.ratingCount === 1 ? "" : "s"}`
-                : ""}
-            </span>
-          </h2>
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            {reviews.map((review) => (
-              <Card key={review.id}>
-                <CardContent className="space-y-2 p-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-1">
-                      {Array.from({ length: 5 }, (_, starIndex) => (
-                        <Star
-                          key={starIndex}
-                          className={`size-3.5 ${
-                            starIndex < review.rating
-                              ? "fill-amber-400 text-amber-400"
-                              : "text-muted-foreground/40"
-                          }`}
-                        />
-                      ))}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {review.createdAt.toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
-                    </span>
-                  </div>
-                  {review.comment && (
-                    <p className="text-sm leading-relaxed text-muted-foreground">
-                      “{review.comment}”
-                    </p>
-                  )}
-                  <p className="text-xs font-medium text-foreground">
-                    {review.reviewerName}
-                  </p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </section>
-      )}
+          <ReviewsSection
+            listingId={listing.id}
+            initialReviews={reviews}
+            ratingAvg={listing.ratingAvg}
+            ratingCount={listing.ratingCount}
+            breakdown={ratingBreakdown}
+          />
+        </div>
+      </Card>
     </main>
   );
 }

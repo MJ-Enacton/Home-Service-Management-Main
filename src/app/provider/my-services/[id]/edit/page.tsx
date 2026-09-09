@@ -11,6 +11,8 @@ import {
   serviceTiers,
 } from "@/lib/db/schema";
 import { listCategories } from "@/lib/db/queries/categories";
+import { BackButton } from "@/components/BackButton";
+import { Card } from "@/components/ui/card";
 import { ListingEditor } from "../../ListingEditor";
 
 export default async function EditServicePage({
@@ -50,9 +52,15 @@ export default async function EditServicePage({
       .where(eq(serviceTiers.listingId, id))
       .orderBy(asc(serviceTiers.displayOrder)),
     db
-      .select({ id: listingImages.id })
+      .select({
+        id: listingImages.id,
+        publicId: listingImages.publicId,
+        secureUrl: listingImages.secureUrl,
+        altText: listingImages.altText,
+      })
       .from(listingImages)
-      .where(eq(listingImages.listingId, id)),
+      .where(eq(listingImages.listingId, id))
+      .orderBy(asc(listingImages.displayOrder), asc(listingImages.createdAt)),
   ]);
 
   const categorySlug =
@@ -66,35 +74,46 @@ export default async function EditServicePage({
     "";
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 pb-16 md:px-6">
-      <div className="mb-8 border-b bg-muted/40 -mx-4 px-4 py-8 md:-mx-6 md:px-6">
-        <p className="text-sm text-muted-foreground">
-          Account <span className="mx-1 text-border">/</span> My Services{" "}
-          <span className="mx-1 text-border">/</span>{" "}
-          <span className="font-medium text-foreground">Edit</span>
-        </p>
-        <h1 className="mt-1 truncate text-3xl font-bold tracking-tight md:text-4xl">
-          {listing.title}
-        </h1>
-      </div>
+    <main className="mx-auto w-full max-w-7xl px-4 pt-6 pb-16 md:px-6 md:pt-8">
+      {/* No overflow-hidden here — it would break the sticky status/save sidebar inside ListingEditor. */}
+      <Card>
+        <div className="border-b px-5 py-4 sm:px-6">
+          <BackButton href="/provider/my-services" className="mb-3 -ml-1" />
+          <p className="text-sm text-muted-foreground">
+            Account <span className="mx-1 text-border">/</span> My Services{" "}
+            <span className="mx-1 text-border">/</span>{" "}
+            <span className="font-medium text-foreground">Edit</span>
+          </p>
+          <h1 className="mt-1 truncate text-3xl font-bold tracking-tight md:text-4xl">
+            {listing.title}
+          </h1>
+        </div>
 
-      <ListingEditor
-        categories={categoryRows.map(({ slug, name }) => ({ slug, name }))}
-        initial={{
-          id: listing.id,
-          title: listing.title,
-          description: listing.description ?? "",
-          categorySlug,
-          pricingType: listing.pricingType,
-          basePriceCents: listing.basePrice,
-          location: listing.location ?? "",
-          estimatedDuration: listing.estimatedDuration ?? "",
-          tags: Array.isArray(listing.tags) ? listing.tags : [],
-          status: listing.status,
-          tiers,
-          imageCount: images.length,
-        }}
-      />
+        <div className="bg-cream p-3 sm:p-4 dark:bg-zinc-800/60">
+          <ListingEditor
+            categories={categoryRows.map(({ slug, name }) => ({ slug, name }))}
+            initial={{
+              id: listing.id,
+              title: listing.title,
+              description: listing.description ?? "",
+              categorySlug,
+              pricingType: listing.pricingType,
+              basePriceCents: listing.basePrice,
+              location: listing.location ?? "",
+              estimatedDuration: listing.estimatedDuration ?? "",
+              tags: Array.isArray(listing.tags) ? listing.tags : [],
+              status: listing.status,
+              tiers,
+              images: images.map((image) => ({
+                id: image.id,
+                publicId: image.publicId,
+                secureUrl: image.secureUrl,
+                altText: image.altText,
+              })),
+            }}
+          />
+        </div>
+      </Card>
     </main>
   );
 }

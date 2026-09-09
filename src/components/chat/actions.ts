@@ -22,7 +22,8 @@ export interface ChatSummary {
   status: "confirmed" | "in_progress";
   counterpartyName: string;
   listingTitle: string;
-  scheduledDate: Date;
+  /** date-only "YYYY-MM-DD" */
+  scheduledDate: string;
   scheduledTimeSlot: string;
   lastMessage: {
     body: string;

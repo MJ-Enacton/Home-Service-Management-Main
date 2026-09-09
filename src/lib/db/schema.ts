@@ -3,6 +3,8 @@ import {
   pgTable,
   text,
   timestamp,
+  date,
+  varchar,
   boolean,
   index,
   uniqueIndex,
@@ -186,8 +188,6 @@ export const categories = pgTable("categories", {
   name: text("name").notNull().unique(),
   slug: text("slug").notNull().unique(),
   description: text("description"),
-  imageData: text("image_data"),
-  imageMime: text("image_mime"),
   displayOrder: integer("display_order").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
@@ -211,8 +211,8 @@ export const providerProfiles = pgTable(
     bio: text("bio"),
     yearsExperience: integer("years_experience").default(0).notNull(),
     serviceAreas: jsonb("service_areas").$type<string[]>(),
-    avatarData: text("avatar_data"),
-    avatarMime: text("avatar_mime"),
+    avatarPublicId: text("avatar_public_id"),
+    avatarUrl: text("avatar_url"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -294,13 +294,38 @@ export const listingImages = pgTable(
     listingId: uuid("listing_id")
       .notNull()
       .references(() => serviceListings.id, { onDelete: "cascade" }),
-    imageData: text("image_data").notNull(),
-    imageMime: text("image_mime").notNull(),
+    publicId: text("public_id"),
+    secureUrl: text("secure_url"),
     altText: text("alt_text"),
     displayOrder: integer("display_order").default(0).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [index("listing_images_listing_id_idx").on(table.listingId)],
+);
+
+// --------------------------------------------------
+// Pending Uploads — Cloudinary assets signed but not yet attached
+// --------------------------------------------------
+// Every /api/cloudinary/sign call records its public_id here, so assets
+// uploaded but discarded before save (or abandoned on tab close) can be
+// destroyed by their owner and purged when stale. Rows are consumed
+// (deleted) when the asset is attached via saveListing/saveProviderProfile.
+
+export const pendingUploads = pgTable(
+  "pending_uploads",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    purpose: text("purpose").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("pending_uploads_user_id_idx").on(table.userId),
+    index("pending_uploads_created_at_idx").on(table.createdAt),
+  ],
 );
 
 // --------------------------------------------------
@@ -328,18 +353,16 @@ export const bookings = pgTable(
 
     status: bookingStatusEnum("status").default("requested").notNull(),
 
-    // Step 1 — Job Details
-    streetAddress: text("street_address").notNull(),
-    city: text("city"),
-    zipCode: text("zip_code"),
+    // Step 1 — Job Details (whole address lives in streetAddress only)
+    streetAddress: varchar("street_address", { length: 500 }).notNull(),
     jobNotes: text("job_notes"),
     contactFirstName: text("contact_first_name"),
     contactLastName: text("contact_last_name"),
     contactEmail: text("contact_email"),
     contactPhone: text("contact_phone"),
 
-    // Step 2 — Schedule
-    scheduledDate: timestamp("scheduled_date").notNull(),
+    // Step 2 — Schedule (date only; time lives in scheduledTimeSlot)
+    scheduledDate: date("scheduled_date").notNull(),
     scheduledTimeSlot: text("scheduled_time_slot").notNull(), // e.g., "09:30 AM"
     isContactless: boolean("is_contactless").default(false).notNull(),
     isUrgent: boolean("is_urgent").default(false).notNull(),
@@ -366,6 +389,12 @@ export const bookings = pgTable(
     index("bookings_provider_id_idx").on(table.providerId),
     index("bookings_status_idx").on(table.status),
     index("bookings_scheduled_date_idx").on(table.scheduledDate),
+    // Anti-double-booking: one active booking per provider per date+slot.
+    // The DB arbitrates concurrent inserts (constraint-based serialization);
+    // the second committer gets a unique violation instead of a phantom.
+    uniqueIndex("bookings_provider_slot_no_overlap")
+      .on(table.providerId, table.scheduledDate, table.scheduledTimeSlot)
+      .where(sql`${table.status} != 'cancelled'`),
     check(
       "chk_bookings_amounts_nonneg",
       sql`${table.serviceFee} >= 0 AND ${table.taxAmount} >= 0 AND ${table.totalAmount} >= 0`,

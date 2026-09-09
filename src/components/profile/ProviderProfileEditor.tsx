@@ -4,6 +4,8 @@ import { useRef, useState, useTransition } from "react";
 import { ImagePlus, Loader2, Save, Trash2 } from "lucide-react";
 
 import { saveProviderProfile } from "@/lib/profile/actions";
+import { uploadToCloudinary } from "@/lib/cloudinary-client";
+import { CldImage } from "next-cloudinary";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -25,7 +27,8 @@ interface ProviderProfileEditorProps {
     yearsExperience: number;
     serviceAreas: string[];
     hasAvatar: boolean;
-    avatarVersion: number;
+    avatarPublicId?: string | null;
+    avatarUrl?: string | null;
   };
 }
 
@@ -39,21 +42,48 @@ export function ProviderProfileEditor({ initial }: ProviderProfileEditorProps) {
   );
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cancelAvatarUpload = useRef(false);
   const [pendingAvatar, setPendingAvatar] = useState<{
     previewUrl: string;
-    base64: string;
-    mimeType: string;
+    publicId: string;
+    url: string;
   } | null>(null);
   const [removeAvatar, setRemoveAvatar] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
-  // Preview priority: newly picked > removed (blank) > stored avatar.
+  /** Best-effort delete of an avatar upload discarded before save. */
+  async function discardPendingAvatar(publicId: string): Promise<void> {
+    try {
+      await fetch("/api/cloudinary/orphan", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ public_id: publicId, purpose: "avatar" }),
+      });
+    } catch {
+      // The 24h stale purge in the sign route cleans up anything missed.
+    }
+  }
+
+  function clearPendingAvatar() {
+    if (pendingAvatar?.publicId) {
+      // Uploaded but never saved — destroy now so Cloudinary stays clean.
+      void discardPendingAvatar(pendingAvatar.publicId);
+    } else if (isUploadingAvatar) {
+      // Still in flight — the success handler destroys the orphan.
+      cancelAvatarUpload.current = true;
+    }
+    setPendingAvatar(null);
+  }
+
+  // Preview priority: newly picked > removed (blank) > Cloudinary image.
+  const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
   const previewUrl = pendingAvatar
     ? pendingAvatar.previewUrl
     : removeAvatar || !initial.hasAvatar
       ? null
-      : `/api/profile/avatar?v=${initial.avatarVersion}`;
+      : initial.avatarUrl;
 
-  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
@@ -70,20 +100,45 @@ export function ProviderProfileEditor({ initial }: ProviderProfileEditorProps) {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      setPendingAvatar({
-        previewUrl: dataUrl,
-        base64: dataUrl.split(",")[1] ?? "",
-        mimeType: file.type,
+    const localPreview = URL.createObjectURL(file);
+    // Replacing an unsaved pick orphans the previous upload — destroy it.
+    if (pendingAvatar?.publicId) {
+      void discardPendingAvatar(pendingAvatar.publicId);
+    }
+    cancelAvatarUpload.current = false;
+    setPendingAvatar({ previewUrl: localPreview, publicId: "", url: "" });
+    setRemoveAvatar(false);
+    setIsUploadingAvatar(true);
+    try {
+      const uploaded = await uploadToCloudinary(file, "avatar");
+      if (cancelAvatarUpload.current) {
+        cancelAvatarUpload.current = false;
+        void discardPendingAvatar(uploaded.publicId);
+        setPendingAvatar(null);
+      } else {
+        setPendingAvatar({
+          previewUrl: uploaded.secureUrl,
+          publicId: uploaded.publicId,
+          url: uploaded.secureUrl,
+        });
+      }
+    } catch (err) {
+      setPendingAvatar(null);
+      URL.revokeObjectURL(localPreview);
+      toast.add({
+        title: err instanceof Error ? err.message : "Photo upload failed.",
+        type: "error",
       });
-      setRemoveAvatar(false);
-    };
-    reader.readAsDataURL(file);
+    } finally {
+      setIsUploadingAvatar(false);
+    }
   }
 
   function handleSave() {
+    if (isUploadingAvatar) {
+      toast.add({ title: "Wait for photo upload to finish.", type: "error" });
+      return;
+    }
     const yearsNumber = Number.parseInt(years, 10);
     if (!Number.isFinite(yearsNumber) || yearsNumber < 0 || yearsNumber > 60) {
       toast.add({
@@ -102,11 +157,11 @@ export function ProviderProfileEditor({ initial }: ProviderProfileEditorProps) {
           .map((area) => area.trim())
           .filter(Boolean)
           .slice(0, 10),
-        ...(pendingAvatar
+        ...(pendingAvatar && pendingAvatar.url
           ? {
               avatar: {
-                base64: pendingAvatar.base64,
-                mimeType: pendingAvatar.mimeType,
+                publicId: pendingAvatar.publicId,
+                url: pendingAvatar.url,
               },
             }
           : {}),
@@ -132,19 +187,32 @@ export function ProviderProfileEditor({ initial }: ProviderProfileEditorProps) {
       </CardHeader>
 
       <CardContent className="space-y-5">
-        {/* Photo */}
+        {/* Photo (face-aware Cloudinary thumb when migrated) */}
         <div className="flex items-center gap-4">
-          {previewUrl ? (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
-              src={previewUrl}
+          {pendingAvatar || !initial.avatarPublicId || !cloudName || removeAvatar ? (
+            previewUrl ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={previewUrl}
+                alt="Your photo"
+                className="size-16 rounded-full object-cover ring-1 ring-border"
+              />
+            ) : (
+              <div className="flex size-16 items-center justify-center rounded-full bg-primary/10 text-lg font-semibold text-primary">
+                ?
+              </div>
+            )
+          ) : (
+            <CldImage
+              src={initial.avatarPublicId}
+              width={128}
+              height={128}
               alt="Your photo"
+              crop="fill"
+              gravity="faces"
+              sizes="64px"
               className="size-16 rounded-full object-cover ring-1 ring-border"
             />
-          ) : (
-            <div className="flex size-16 items-center justify-center rounded-full bg-primary/10 text-lg font-semibold text-primary">
-              ?
-            </div>
           )}
 
           <div className="flex flex-wrap gap-2">
@@ -163,7 +231,7 @@ export function ProviderProfileEditor({ initial }: ProviderProfileEditorProps) {
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  setPendingAvatar(null);
+                  clearPendingAvatar();
                   setRemoveAvatar(true);
                   if (fileInputRef.current) fileInputRef.current.value = "";
                 }}
@@ -223,11 +291,16 @@ export function ProviderProfileEditor({ initial }: ProviderProfileEditorProps) {
           </div>
         </div>
 
-        <Button onClick={handleSave} disabled={isPending}>
+        <Button onClick={handleSave} disabled={isPending || isUploadingAvatar}>
           {isPending ? (
             <>
               <Loader2 className="size-4 animate-spin" />
               Saving…
+            </>
+          ) : isUploadingAvatar ? (
+            <>
+              <Loader2 className="size-4 animate-spin" />
+              Uploading…
             </>
           ) : (
             <>

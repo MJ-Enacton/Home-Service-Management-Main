@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -13,8 +13,8 @@ import {
   providerAvailability,
   serviceListings,
   serviceTiers,
+  user,
 } from "@/lib/db/schema";
-import type { BatchItem } from "drizzle-orm/batch";
 import type { ActionResult } from "@/types";
 import {
   bookingDetailsSchema,
@@ -25,12 +25,45 @@ import {
   generateBookingNumber,
 } from "@/lib/pricing";
 import { generateSlots } from "@/lib/availability";
+import { isDateWithinBookingWindow } from "@/lib/booking-window";
 import type { Slot } from "@/lib/availability";
 import { emitToUser } from "@/lib/socket/emit";
+import { sendMail } from "@/lib/email/send";
+import { paymentReceiptTemplate } from "@/lib/email/templates";
+import { formatBookingSchedule, formatCents, todayLocalDate } from "@/lib/format";
 import {
   pushUnreadCount,
   type NewRequestEvent,
 } from "@/lib/socket/notify";
+import {
+  getListingReviews,
+  type ReviewSort,
+} from "@/lib/db/queries/listings";
+
+/** Paginated reviews for the Top Reviews section (no auth required). */
+export async function getServiceReviews(
+  listingId: string,
+  sort: ReviewSort = "top",
+  page = 0,
+  pageSize = 6,
+) {
+  const safeSort: ReviewSort =
+    sort === "recent" || sort === "highest" || sort === "lowest"
+      ? sort
+      : "top";
+  const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 0;
+  const safeSize =
+    Number.isFinite(pageSize) && pageSize > 0
+      ? Math.min(Math.floor(pageSize), 20)
+      : 6;
+  const reviews = await getListingReviews(
+    listingId,
+    safeSort,
+    safeSize,
+    safePage * safeSize,
+  );
+  return { success: true as const, reviews };
+}
 
 export interface BookServiceInput {
   listingId: string;
@@ -62,6 +95,13 @@ export async function getScheduleOptions(
     return { success: false, error: "Invalid date." };
   }
 
+  if (!isDateWithinBookingWindow(date)) {
+    return {
+      success: false,
+      error: "Bookings are allowed only within the next 7 days (today included).",
+    };
+  }
+
   const [windows, bookedRows] = await Promise.all([
     db
       .select({
@@ -84,8 +124,7 @@ export async function getScheduleOptions(
         and(
           eq(bookings.providerId, listing.providerId),
           ne(bookings.status, "cancelled"),
-          sql`${bookings.scheduledDate} >= ${`${date} 00:00:00`}::timestamp`,
-          sql`${bookings.scheduledDate} < ${`${date} 23:59:59`}::timestamp`,
+          eq(bookings.scheduledDate, date),
         ),
       ),
   ]);
@@ -189,13 +228,20 @@ export async function bookService(
     baseCents = tier.price;
   }
 
-  let scheduledDate: Date;
+  let scheduledDate: string;
   let scheduledTimeSlot: string;
 
   if (schedule.data.isUrgent) {
-    scheduledDate = new Date();
-    scheduledTimeSlot = `${scheduledDate.getHours().toString().padStart(2, "0")}:${scheduledDate.getMinutes().toString().padStart(2, "0")}`;
+    const now = new Date();
+    scheduledDate = todayLocalDate();
+    scheduledTimeSlot = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
   } else {
+    if (!isDateWithinBookingWindow(schedule.data.scheduledDate!)) {
+      return {
+        success: false,
+        error: "Bookings are allowed only within the next 7 days (today included).",
+      };
+    }
     const slotCheck = await getScheduleOptions(
       listing.id,
       schedule.data.scheduledDate!,
@@ -216,14 +262,8 @@ export async function bookService(
       };
     }
 
-    scheduledDate = new Date(
-      `${schedule.data.scheduledDate}T${schedule.data.scheduledTimeSlot}:00`,
-    );
+    scheduledDate = schedule.data.scheduledDate!;
     scheduledTimeSlot = schedule.data.scheduledTimeSlot!;
-
-    if (Number.isNaN(scheduledDate.getTime())) {
-      return { success: false, error: "Invalid schedule." };
-    }
   }
 
   const pricing = computePriceBreakdown(baseCents);
@@ -233,38 +273,101 @@ export async function bookService(
     let bookingId: string | undefined;
     let bookingNumber: string | undefined;
 
-    // Insert the booking first (retry on rare booking-number collisions),
-    // so payments/notifications can reference it.
+    // Booking + payment + provider notification commit atomically: a
+    // failure in any of them rolls back the whole unit, so a booking
+    // can never exist without its payment/notification rows. Retry the
+    // whole unit on rare booking-number collisions with a fresh number.
     for (let attempt = 0; attempt < 5 && !bookingId; attempt++) {
+      const candidateNumber = generateBookingNumber();
       try {
-        bookingNumber = generateBookingNumber();
-        const { contactFullName, ...restDetails } = details.data;
-        const [firstName, ...lastNameParts] = (contactFullName || "").split(" ");
-        const lastName = lastNameParts.join(" ");
-        const [inserted] = await db
-          .insert(bookings)
-          .values({
-            bookingNumber: bookingNumber!,
-            listingId: listing.id,
-            tierId,
-            customerId: session.user.id,
-            providerId: listing.providerId,
-            status: "requested",
-            ...restDetails,
-            contactFirstName: firstName || null,
-            contactLastName: lastName || null,
-            scheduledDate,
-            scheduledTimeSlot,
-            isContactless: schedule.data.isContactless,
-            isUrgent: schedule.data.isUrgent,
-            serviceFee: pricing.serviceFeeCents,
-            taxAmount: pricing.taxCents,
-            totalAmount: pricing.totalCents,
-          })
-          .returning({ id: bookings.id });
-        bookingId = inserted?.id;
+        await db.transaction(async (tx) => {
+          // Re-check the slot inside the transaction: the availability
+          // read above ran before this write, so without this guard two
+          // concurrent requests could book the same slot.
+          const [conflict] = await tx
+            .select({ id: bookings.id })
+            .from(bookings)
+            .where(
+              and(
+                eq(bookings.providerId, listing.providerId),
+                eq(bookings.scheduledDate, scheduledDate),
+                eq(bookings.scheduledTimeSlot, scheduledTimeSlot),
+                ne(bookings.status, "cancelled"),
+              ),
+            )
+            .limit(1);
+          if (conflict) {
+            throw new Error("SLOT_TAKEN");
+          }
+
+          const { contactFullName, ...restDetails } = details.data;
+          const [firstName, ...lastNameParts] = (contactFullName || "").split(
+            " ",
+          );
+          const lastName = lastNameParts.join(" ");
+          const [inserted] = await tx
+            .insert(bookings)
+            .values({
+              bookingNumber: candidateNumber,
+              listingId: listing.id,
+              tierId,
+              customerId: session.user.id,
+              providerId: listing.providerId,
+              status: "requested",
+              ...restDetails,
+              contactFirstName: firstName || null,
+              contactLastName: lastName || null,
+              scheduledDate,
+              scheduledTimeSlot,
+              isContactless: schedule.data.isContactless,
+              isUrgent: schedule.data.isUrgent,
+              serviceFee: pricing.serviceFeeCents,
+              taxAmount: pricing.taxCents,
+              totalAmount: pricing.totalCents,
+            })
+            .returning({ id: bookings.id });
+          if (!inserted) {
+            throw new Error("Failed to create booking.");
+          }
+
+          const message = `New booking request "${candidateNumber}" for "${listing.title}" on ${formatBookingSchedule(scheduledDate, scheduledTimeSlot)}.`;
+
+          await tx.insert(payments).values({
+            bookingId: inserted.id,
+            method: input.paymentMethod as "card" | "cod",
+            status: input.paymentMethod === "cod" ? "pending" : "paid",
+            amountPaid: pricing.totalCents,
+            paidAt: new Date(),
+            externalId: buildMockExternalId(
+              input.paymentMethod,
+              input.payment?.cardLast4,
+            ),
+          });
+          await tx.insert(notifications).values({
+            id: notificationId,
+            userId: listing.providerId,
+            bookingId: inserted.id,
+            type: "new_request",
+            title: "New booking request",
+            message,
+          });
+
+          bookingId = inserted.id;
+          bookingNumber = candidateNumber;
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : "";
+        // SLOT_TAKEN is the in-tx fast-path check; the unique index is the
+        // backstop that wins real races (second committer fails here).
+        if (
+          message === "SLOT_TAKEN" ||
+          message.includes("bookings_provider_slot_no_overlap")
+        ) {
+          return {
+            success: false,
+            error: "That time slot is no longer available. Please pick another.",
+          };
+        }
         if (message.includes("bookings_booking_number_unique")) {
           continue; // regenerate and retry
         }
@@ -276,29 +379,7 @@ export async function bookService(
       return { success: false, error: "Failed to create booking." };
     }
 
-    const message = `New booking request "${bookingNumber}" for "${listing.title}" on ${scheduledDate.toLocaleString("en-IN")}.`;
-
-    const statements: [BatchItem<"pg">, ...BatchItem<"pg">[]] = [
-      db.insert(payments).values({
-        bookingId,
-        method: input.paymentMethod as "card" | "cod",
-        status: input.paymentMethod === "cod" ? "pending" : "paid",
-        amountPaid: pricing.totalCents,
-        paidAt: new Date(),
-        externalId: buildMockExternalId(input.paymentMethod, input.payment?.cardLast4),
-      }),
-      db.insert(notifications).values({
-        id: notificationId,
-        userId: listing.providerId,
-        bookingId,
-        type: "new_request",
-        title: "New booking request",
-        message,
-      }),
-    ];
-
-    await db.batch(statements);
-
+    const message = `New booking request "${bookingNumber}" for "${listing.title}" on ${formatBookingSchedule(scheduledDate, scheduledTimeSlot)}.`;
     const payload: NewRequestEvent = {
       id: notificationId,
       bookingId,
@@ -316,6 +397,28 @@ export async function bookService(
       status: "requested",
     });
     void pushUnreadCount(listing.providerId);
+
+    // Payment receipt (card = paid immediately; COD stays pending → skip).
+    // Best-effort: booking success never depends on Gmail.
+    if (input.paymentMethod !== "cod") {
+      void (async () => {
+        const [provider] = await db
+          .select({ name: user.name })
+          .from(user)
+          .where(eq(user.id, listing.providerId));
+        await sendMail({
+          to: session.user.email,
+          ...paymentReceiptTemplate({
+            customerName: session.user.name,
+            bookingNumber: bookingNumber!,
+            serviceTitle: listing.title,
+            providerName: provider?.name ?? "your provider",
+            amount: formatCents(pricing.totalCents),
+            schedule: formatBookingSchedule(scheduledDate, scheduledTimeSlot),
+          }),
+        });
+      })().catch((err) => console.error("[email] receipt failed:", err));
+    }
 
     return { success: true, bookingNumber };
   } catch (err) {

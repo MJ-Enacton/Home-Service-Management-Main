@@ -18,7 +18,13 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { formatCents } from "@/lib/format";
+import { formatCents, formatDateOnly } from "@/lib/format";
+import { ListingCoverImage } from "@/components/ListingCoverImage";
+import type {
+  EarningsPoint,
+  EarningsRange,
+} from "@/lib/db/queries/earnings";
+import { EarningsChart, type EarningsChartType } from "./EarningsChart";
 
 interface RecentRequest {
   id: string;
@@ -38,6 +44,7 @@ interface ActiveService {
   bookings: number;
   revenueCents: number;
   rating: number;
+  coverImagePublicId: string | null;
 }
 
 export default function ProviderDashboardClient({
@@ -49,7 +56,9 @@ export default function ProviderDashboardClient({
   reviewCount,
   bookingsToday,
   bookingsThisWeek,
-  earningsLast7Days,
+  earningsInitial,
+  earningsRange,
+  earningsView,
   newRequestsCount,
   recentRequests,
   activeServices,
@@ -62,7 +71,9 @@ export default function ProviderDashboardClient({
   reviewCount: number;
   bookingsToday: number;
   bookingsThisWeek: number;
-  earningsLast7Days: { label: string; cents: number; date: string }[];
+  earningsInitial: EarningsPoint[];
+  earningsRange: EarningsRange;
+  earningsView: EarningsChartType;
   newRequestsCount: number;
   recentRequests: RecentRequest[];
   activeServices: ActiveService[];
@@ -109,7 +120,7 @@ export default function ProviderDashboardClient({
             <Link href="/provider/my-services/new">
               <Button
                 size="lg"
-                className="rounded-full bg-blue-600 px-6 shadow-sm hover:bg-blue-700"
+                className="rounded-full bg-primary px-6 shadow-sm hover:bg-primary/90"
               >
                 <Plus className="size-4" />
                 Add a service
@@ -135,7 +146,7 @@ export default function ProviderDashboardClient({
           <Card className="rounded-2xl border-zinc-200/70 shadow-sm">
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
-                <span className="flex size-9 items-center justify-center rounded-xl bg-blue-600/10 text-blue-600 dark:bg-blue-500/10">
+                <span className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
                   <DollarSign className="size-4" />
                 </span>
                 <Badge
@@ -230,43 +241,13 @@ export default function ProviderDashboardClient({
           </Card>
         </div>
 
-        {/* Middle: earnings (empty) + recent requests */}
+        {/* Middle: earnings + recent requests */}
         <div className="grid gap-4 lg:grid-cols-[1.45fr_1fr]">
-          <Card className="rounded-2xl border-zinc-200/70 shadow-sm">
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <CardTitle className="text-base">Earnings overview</CardTitle>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Daily earnings for the last 7 days
-                  </p>
-                </div>
-                <Badge variant="outline" className="rounded-full">
-                  Last 7 days
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {/* Empty chart placeholder — as requested */}
-              <div className="flex h-47.5 flex-col items-center justify-center rounded-xl border border-dashed bg-zinc-50/60 px-6 text-center dark:bg-zinc-900/40">
-                <div className="flex size-10 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-black/5 dark:bg-zinc-800">
-                  <DollarSign className="size-5 text-muted-foreground" />
-                </div>
-                <p className="mt-3 text-sm font-semibold">Chart coming soon</p>
-                <p className="mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
-                  Your earnings visualization will appear here once data is
-                  available. For now use the KPI cards above.
-                </p>
-              </div>
-              <div className="mt-3 flex justify-center gap-4 text-xs text-muted-foreground">
-                {earningsLast7Days.slice(0, 3).map((d) => (
-                  <span key={d.date} className="hidden sm:inline">
-                    {d.label}: {formatCents(d.cents, { withCents: false })}
-                  </span>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          <EarningsChart
+            initialPoints={earningsInitial}
+            initialRange={earningsRange}
+            initialView={earningsView}
+          />
 
           <Card className="rounded-2xl border-zinc-200/70 shadow-sm">
             <CardHeader className="pb-0">
@@ -293,7 +274,7 @@ export default function ProviderDashboardClient({
                   </p>
                   <Link
                     href="/provider/my-bookings"
-                    className="mt-4 inline-flex text-xs font-medium text-blue-600 hover:underline"
+                    className="mt-4 inline-flex text-xs font-medium text-primary hover:underline"
                   >
                     Go to bookings <ChevronRight className="size-3.5" />
                   </Link>
@@ -317,20 +298,13 @@ export default function ProviderDashboardClient({
                             {formatCents(r.totalAmount, { withCents: false })}
                           </span>
                         </div>
-                        <p className="truncate text-xs font-medium text-blue-600">
+                        <p className="truncate text-xs font-medium text-primary">
                           {r.listingTitle}
                         </p>
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                           <span className="inline-flex items-center gap-1">
                             <Clock className="size-3" />
-                            {new Date(r.scheduledDate).toLocaleDateString(
-                              "en-US",
-                              {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
-                              },
-                            )}
+                            {formatDateOnly(r.scheduledDate)}
                           </span>
                           <span className="inline-flex items-center gap-1">
                             <MapPin className="size-3" />
@@ -382,7 +356,7 @@ export default function ProviderDashboardClient({
             </div>
             <Link
               href="/provider/my-services"
-              className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline"
+              className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
             >
               Manage <ChevronRight className="size-4" />
             </Link>
@@ -399,7 +373,7 @@ export default function ProviderDashboardClient({
                   have up to 5 active services.
                 </p>
                 <Link href="/provider/my-services/new" className="mt-4 inline-flex">
-                  <Button className="rounded-full bg-blue-600 hover:bg-blue-700">
+                  <Button className="rounded-full">
                     <Plus className="size-4" /> Add a service
                   </Button>
                 </Link>
@@ -412,14 +386,16 @@ export default function ProviderDashboardClient({
                     className="group overflow-hidden rounded-2xl border bg-white shadow-sm transition hover:shadow-md dark:bg-zinc-900"
                   >
                     <div className="relative h-28 overflow-hidden bg-zinc-100 dark:bg-zinc-800">
-                      <img
-                        src={`/api/services/${s.id}/image`}
-                        alt={s.title}
-                        className="h-full w-full object-cover transition group-hover:scale-[1.02]"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = "none";
-                        }}
-                      />
+                      {s.coverImagePublicId ? (
+                        <ListingCoverImage
+                          publicId={s.coverImagePublicId}
+                          alt={s.title}
+                          className="h-full w-full object-cover transition group-hover:scale-[1.02]"
+                          sizes="(max-width: 1024px) 100vw, 33vw"
+                          width={640}
+                          height={360}
+                        />
+                      ) : null}
                       <div className="absolute inset-0 bg-linear-to-t from-black/15 to-transparent" />
                       {s.rating > 0 && (
                         <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 text-xs font-semibold shadow">

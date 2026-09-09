@@ -8,11 +8,15 @@ import { z } from "zod";
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/db";
+import {
+  consumePendingUploads,
+  destroyAsset,
+  isOwnedPublicId,
+  isOwnCloudinaryUrl,
+} from "@/lib/cloudinary";
 import { providerAvailability, providerProfiles } from "@/lib/db/schema";
 import type { ActionResult } from "@/types";
 import { availabilityWindowSchema } from "@/lib/validators";
-
-const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 
 const profileSchema = z.object({
   bio: z.string().max(1000, "Bio must be under 1000 characters."),
@@ -25,8 +29,8 @@ const profileSchema = z.object({
 });
 
 const avatarSchema = z.object({
-  base64: z.string().min(1),
-  mimeType: z.string().startsWith("image/", "Only image files are allowed."),
+  publicId: z.string().min(1).max(300),
+  url: z.string().url().max(1000),
 });
 
 async function requireProvider(): Promise<
@@ -56,7 +60,7 @@ export interface SaveProviderProfileInput {
   bio?: string;
   yearsExperience?: number;
   serviceAreas?: string[];
-  avatar?: { base64: string; mimeType: string } | null;
+  avatar?: { publicId: string; url: string } | null;
   removeAvatar?: boolean;
 }
 
@@ -88,9 +92,18 @@ export async function saveProviderProfile(
     };
   }
 
+  // Resolve previous avatar so replaced/removed assets can be destroyed.
+  const [previous] = await db
+    .select({ avatarPublicId: providerProfiles.avatarPublicId })
+    .from(providerProfiles)
+    .where(eq(providerProfiles.userId, guard.userId));
+
   let avatarColumns: Record<string, unknown> = {};
   if ((input as SaveProviderProfileInput).removeAvatar) {
-    avatarColumns = { avatarData: null, avatarMime: null };
+    avatarColumns = {
+      avatarPublicId: null,
+      avatarUrl: null,
+    };
   } else if ((input as SaveProviderProfileInput).avatar) {
     const avatarParsed = avatarSchema.safeParse(
       (input as SaveProviderProfileInput).avatar,
@@ -101,13 +114,16 @@ export async function saveProviderProfile(
         error: avatarParsed.error.issues[0]?.message ?? "Invalid image.",
       };
     }
-    const sizeBytes = Math.ceil((avatarParsed.data.base64.length * 3) / 4);
-    if (sizeBytes > MAX_AVATAR_BYTES) {
-      return { success: false, error: "Photo must be smaller than 2 MB." };
+    const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "";
+    if (!isOwnedPublicId(avatarParsed.data.publicId, "avatar")) {
+      return { success: false, error: "Invalid image reference." };
+    }
+    if (!cloudName || !isOwnCloudinaryUrl(avatarParsed.data.url, cloudName)) {
+      return { success: false, error: "Invalid image URL." };
     }
     avatarColumns = {
-      avatarData: avatarParsed.data.base64,
-      avatarMime: avatarParsed.data.mimeType,
+      avatarPublicId: avatarParsed.data.publicId,
+      avatarUrl: avatarParsed.data.url,
     };
   }
 
@@ -133,6 +149,19 @@ export async function saveProviderProfile(
 
     revalidatePath("/provider/profile");
     revalidatePath("/profile");
+    const newAvatarPublicId = (
+      avatarColumns as { avatarPublicId?: string | null }
+    ).avatarPublicId;
+    if (newAvatarPublicId) {
+      await consumePendingUploads(guard.userId, [newAvatarPublicId]);
+    }
+    if (
+      Object.keys(avatarColumns).length > 0 &&
+      previous?.avatarPublicId &&
+      newAvatarPublicId !== previous.avatarPublicId
+    ) {
+      void destroyAsset(previous.avatarPublicId);
+    }
     return { success: true };
   } catch (err) {
     console.error(err);
@@ -172,21 +201,25 @@ export async function saveAvailability(
   }
 
   try {
-    await db
-      .delete(providerAvailability)
-      .where(eq(providerAvailability.providerId, guard.userId));
+    // Delete + re-insert commit atomically: a failure can never leave
+    // the provider with zero availability windows.
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(providerAvailability)
+        .where(eq(providerAvailability.providerId, guard.userId));
 
-    if (parsed.data.length > 0) {
-      await db.insert(providerAvailability).values(
-        parsed.data.map((window) => ({
-          providerId: guard.userId,
-          dayOfWeek: window.dayOfWeek,
-          startTime: window.startTime,
-          endTime: window.endTime,
-          isActive: true,
-        })),
-      );
-    }
+      if (parsed.data.length > 0) {
+        await tx.insert(providerAvailability).values(
+          parsed.data.map((window) => ({
+            providerId: guard.userId,
+            dayOfWeek: window.dayOfWeek,
+            startTime: window.startTime,
+            endTime: window.endTime,
+            isActive: true,
+          })),
+        );
+      }
+    });
 
     revalidatePath("/provider/profile");
     revalidatePath("/profile");

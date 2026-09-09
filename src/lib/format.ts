@@ -1,6 +1,9 @@
 /** Shared display-formatting helpers. All monetary amounts are integer cents. */
 
-export function formatCents(cents: number, options?: { withCents?: boolean }): string {
+export function formatCents(
+  cents: number,
+  options?: { withCents?: boolean },
+): string {
   const withCents = options?.withCents ?? true;
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -19,7 +22,7 @@ export function parseCents(input: string): number | null {
 
 export const PRICING_TYPE_LABELS: Record<string, string> = {
   hourly: "hr",
-  fixed: "project",
+  fixed: "fixed",
   visit: "visit",
 };
 
@@ -49,4 +52,37 @@ export function enumLabel(value: string): string {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+/**
+ * Parse a "YYYY-MM-DD" date-only string as a LOCAL date.
+ * (Bare new Date("YYYY-MM-DD") parses as UTC midnight, which renders as
+ * the previous day in timezones ahead of UTC — e.g. IST.)
+ */
+export function parseLocalDate(yyyyMmDd: string): Date {
+  const [y, m, d] = yyyyMmDd.split("-").map(Number);
+  return new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1);
+}
+
+/** "2026-09-10" -> en-IN medium date ("10 Sept 2026"-style). */
+export function formatDateOnly(yyyyMmDd: string): string {
+  return parseLocalDate(yyyyMmDd).toLocaleDateString("en-IN", {
+    dateStyle: "medium",
+  });
+}
+
+/** Booking schedule line: "10 Sept 2026 · 09:30 AM". */
+export function formatBookingSchedule(
+  scheduledDate: string,
+  scheduledTimeSlot: string,
+): string {
+  return `${formatDateOnly(scheduledDate)} · ${formatTimeDisplay(scheduledTimeSlot)}`;
+}
+
+/** Today's date as local "YYYY-MM-DD" (used for urgent bookings). */
+export function todayLocalDate(): string {
+  const now = new Date();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${mm}-${dd}`;
 }

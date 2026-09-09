@@ -1,4 +1,3 @@
-/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { useState } from "react";
@@ -7,6 +6,7 @@ import { Clock, Hammer, MapPin, Star } from "lucide-react";
 
 import type { ServiceListingCard as ListingCardData } from "@/types/service";
 import { enumLabel, formatCents, pricingUnitLabel } from "@/lib/format";
+import { ListingCoverImage } from "@/components/ListingCoverImage";
 
 interface ListingCardProps {
   listing: ListingCardData;
@@ -29,12 +29,11 @@ export function ListingCard({ listing }: ListingCardProps) {
             <Hammer className="size-6 text-zinc-400" />
           </div>
         ) : (
-          <img
-            src={`/api/services/${listing.id}/image`}
+          <ListingCoverImage
+            publicId={listing.coverImagePublicId}
             alt={listing.title}
-            onError={() => setImageFailed(true)}
             className="h-44 w-full object-cover"
-            loading="lazy"
+            onMissing={() => setImageFailed(true)}
           />
         )}
         <div className="absolute left-3 top-3">

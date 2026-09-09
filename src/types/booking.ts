@@ -26,7 +26,8 @@ export interface BookingListItem {
   categoryName: string | null;
   /** the other party relative to the viewer */
   counterpartyName: string;
-  scheduledDate: Date;
+  /** date-only "YYYY-MM-DD" (bookings.scheduled_date is a date column) */
+  scheduledDate: string;
   scheduledTimeSlot: string;
   addressLine: string;
   totalAmountCents: number;

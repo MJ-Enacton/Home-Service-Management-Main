@@ -36,27 +36,30 @@ export async function respondToBooking(
   }
 
   try {
-    // The notification must belong to this provider and link to a booking.
-    const [notification] = await db
-      .select({ bookingId: notifications.bookingId })
-      .from(notifications)
-      .where(
-        and(
-          eq(notifications.id, notificationId),
-          eq(notifications.userId, session.user.id),
-        ),
-      );
+    // Status change + mark-read + customer notification commit atomically:
+    // the outcome can never exist without its notification row.
+    const outcome = await db.transaction(async (tx) => {
+      // The notification must belong to this provider and link to a booking.
+      const [notification] = await tx
+        .select({ bookingId: notifications.bookingId })
+        .from(notifications)
+        .where(
+          and(
+            eq(notifications.id, notificationId),
+            eq(notifications.userId, session.user.id),
+          ),
+        );
 
-    if (!notification?.bookingId) {
-      return { success: false, error: "Notification or booking not found." };
-    }
+      if (!notification?.bookingId) {
+        throw new Error("NOT_FOUND");
+      }
 
-    const now = new Date();
+      const now = new Date();
 
-    // Schedule-conflict guard only matters when accepting: reject the accept
-    // when this provider already holds an active booking at the same date+slot.
-    const conflictGuard = accept
-      ? sql`not exists (
+      // Schedule-conflict guard only matters when accepting: reject the accept
+      // when this provider already holds an active booking at the same date+slot.
+      const conflictGuard = accept
+        ? sql`not exists (
           select 1 from bookings other
           where other.provider_id = ${session.user.id}
             and other.scheduled_date = ${bookings.scheduledDate}
@@ -64,65 +67,66 @@ export async function respondToBooking(
             and other.status not in ('cancelled', 'completed')
             and other.id <> ${notification.bookingId}
         )`
-      : undefined;
+        : undefined;
 
-    const [updated] = await db
-      .update(bookings)
-      .set(
-        accept
-          ? { status: "confirmed", confirmedAt: now }
-          : { status: "cancelled", cancelledAt: now },
-      )
-      .where(
-        and(
-          eq(bookings.id, notification.bookingId),
-          eq(bookings.providerId, session.user.id),
-          eq(bookings.status, "requested"),
-          ...(conflictGuard ? [conflictGuard] : []),
-        ),
-      )
-      .returning({
-        id: bookings.id,
-        customerId: bookings.customerId,
-        bookingNumber: bookings.bookingNumber,
+      const [updated] = await tx
+        .update(bookings)
+        .set(
+          accept
+            ? { status: "confirmed", confirmedAt: now }
+            : { status: "cancelled", cancelledAt: now },
+        )
+        .where(
+          and(
+            eq(bookings.id, notification.bookingId),
+            eq(bookings.providerId, session.user.id),
+            eq(bookings.status, "requested"),
+            ...(conflictGuard ? [conflictGuard] : []),
+          ),
+        )
+        .returning({
+          id: bookings.id,
+          customerId: bookings.customerId,
+          bookingNumber: bookings.bookingNumber,
+        });
+
+      if (!updated) {
+        const [target] = await tx
+          .select({ status: bookings.status })
+          .from(bookings)
+          .where(eq(bookings.id, notification.bookingId));
+
+        if (target?.status !== "requested") {
+          throw new Error("ALREADY_HANDLED");
+        }
+        throw new Error("UPDATE_FAILED");
+      }
+
+      // Mark this provider's notification as read.
+      await tx
+        .update(notifications)
+        .set({ readAt: now })
+        .where(eq(notifications.id, notificationId));
+
+      // Notify the customer of the outcome.
+      const message = accept
+        ? `Your booking ${updated.bookingNumber} has been confirmed by ${session.user.name}.`
+        : `Your booking ${updated.bookingNumber} was declined by ${session.user.name}.`;
+
+      const customerNotificationId = crypto.randomUUID();
+      await tx.insert(notifications).values({
+        id: customerNotificationId,
+        userId: updated.customerId,
+        bookingId: updated.id,
+        type: accept ? "request_accepted" : "booking_cancelled",
+        title: accept ? "Booking confirmed" : "Booking declined",
+        message,
       });
 
-    if (!updated) {
-      const [target] = await db
-        .select({ status: bookings.status })
-        .from(bookings)
-        .where(eq(bookings.id, notification.bookingId));
-
-      if (target?.status !== "requested") {
-        return {
-          success: false,
-          error: "This request was already handled.",
-        };
-      }
-      return { success: false, error: "Failed to update the booking." };
-    }
-
-    // Mark this provider's notification as read.
-    await db
-      .update(notifications)
-      .set({ readAt: now })
-      .where(eq(notifications.id, notificationId));
-
-    // Notify the customer of the outcome.
-    const message = accept
-      ? `Your booking ${updated.bookingNumber} has been confirmed by ${session.user.name}.`
-      : `Your booking ${updated.bookingNumber} was declined by ${session.user.name}.`;
-
-    const customerNotificationId = crypto.randomUUID();
-    await db.insert(notifications).values({
-      id: customerNotificationId,
-      userId: updated.customerId,
-      bookingId: updated.id,
-      type: accept ? "request_accepted" : "booking_cancelled",
-      title: accept ? "Booking confirmed" : "Booking declined",
-      message,
+      return { updated, customerNotificationId, message };
     });
 
+    const { updated, customerNotificationId, message } = outcome;
     emitToUser(updated.customerId, "booking:updated", {
       bookingId: updated.id,
       bookingNumber: updated.bookingNumber,
@@ -145,6 +149,16 @@ export async function respondToBooking(
     return { success: true };
   } catch (err) {
     console.error(err);
+    const code = err instanceof Error ? err.message : "";
+    if (code === "NOT_FOUND") {
+      return { success: false, error: "Notification or booking not found." };
+    }
+    if (code === "ALREADY_HANDLED") {
+      return { success: false, error: "This request was already handled." };
+    }
+    if (code === "UPDATE_FAILED") {
+      return { success: false, error: "Failed to update the booking." };
+    }
     return { success: false, error: "Failed to respond to the request." };
   }
 }

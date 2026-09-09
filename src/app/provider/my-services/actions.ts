@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -8,6 +8,12 @@ import { z } from "zod";
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/db";
+import {
+  consumePendingUploads,
+  destroyAsset,
+  isOwnedPublicId,
+  isOwnCloudinaryUrl,
+} from "@/lib/cloudinary";
 import {
   bookings,
   categories,
@@ -19,7 +25,13 @@ import {
 import type { ActionResult } from "@/types";
 import { listingSchema, tierSchema } from "@/lib/validators";
 
-const MAX_IMAGE_BYTES = 2 * 1024 * 1024; // 2 MB
+const cloudinaryImageSchema = z.object({
+  /** DB row id for images already saved; absent for fresh uploads. */
+  id: z.uuid().nullish(),
+  publicId: z.string().min(1).max(300).nullish(),
+  secureUrl: z.string().url().max(1000).nullish(),
+  altText: z.string().max(120).nullish(),
+});
 
 const saveSchema = z.object({
   id: z.uuid().nullish(),
@@ -28,15 +40,7 @@ const saveSchema = z.object({
     .default("active"),
   listing: listingSchema,
   tiers: z.array(tierSchema).max(5),
-  images: z
-    .array(
-      z.object({
-        base64: z.string().min(1),
-        mimeType: z.string().startsWith("image/", "Only image files."),
-        altText: z.string().max(120).nullish(),
-      }),
-    )
-    .max(6),
+  images: z.array(cloudinaryImageSchema).max(6),
 });
 
 async function requireProvider(): Promise<
@@ -71,6 +75,21 @@ export async function saveListing(input: unknown): Promise<ActionResult> {
   }
   const { id, status, listing, tiers, images } = parsed.data;
 
+  const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "";
+  for (const image of images) {
+    if (image.id) continue; // existing row — ownership verified below
+    if (
+      !image.publicId ||
+      !image.secureUrl ||
+      !isOwnedPublicId(image.publicId, "listings")
+    ) {
+      return { success: false, error: "Invalid image reference." };
+    }
+    if (!cloudName || !isOwnCloudinaryUrl(image.secureUrl, cloudName)) {
+      return { success: false, error: "Invalid image URL." };
+    }
+  }
+
   // If tiers are provided but base pricing is missing, provide sensible defaults
   // since tiers define the actual pricing.
   const hasTiers = tiers.length > 0;
@@ -79,13 +98,6 @@ export async function saveListing(input: unknown): Promise<ActionResult> {
   const finalBasePrice = listing.basePriceCents ?? (hasTiers ? 0 : 0);
 
   if (
-    hasTiers &&
-    (!listing.pricingType ||
-      listing.basePriceCents === undefined ||
-      listing.basePriceCents === null)
-  ) {
-    // Tiers define pricing; base price/type are not required
-  } else if (
     !hasTiers &&
     (!listing.pricingType ||
       listing.basePriceCents === undefined ||
@@ -96,13 +108,6 @@ export async function saveListing(input: unknown): Promise<ActionResult> {
       error:
         "Base price and pricing type are required when no tiers are provided.",
     };
-  }
-
-  for (const image of images) {
-    const sizeBytes = Math.ceil((image.base64.length * 3) / 4);
-    if (sizeBytes > MAX_IMAGE_BYTES) {
-      return { success: false, error: "Each image must be smaller than 2 MB." };
-    }
   }
 
   const [category] = await db
@@ -117,6 +122,9 @@ export async function saveListing(input: unknown): Promise<ActionResult> {
   try {
     let listingId = id ?? null;
 
+    // ---- Pre-transaction reads + validation (no writes yet) ----
+    let removedImageIds: string[] = [];
+    let removedPublicIds: string[] = [];
     if (listingId) {
       // Ownership check before touching anything.
       const [existing] = await db
@@ -157,28 +165,26 @@ export async function saveListing(input: unknown): Promise<ActionResult> {
         }
       }
 
-      await db
-        .update(serviceListings)
-        .set({
-          title: listing.title,
-          description: listing.description ?? null,
-          categoryId: category.id,
-          pricingType: finalPricingType,
-          basePrice: finalBasePrice,
-          location: listing.location ?? null,
-          estimatedDuration: listing.estimatedDuration ?? null,
-          tags: listing.tags,
-          status,
-        })
-        .where(eq(serviceListings.id, listingId));
-
-      // Replace tiers and images wholesale.
-      await db
-        .delete(serviceTiers)
-        .where(eq(serviceTiers.listingId, listingId));
-      await db
-        .delete(listingImages)
+      // Diff images: keep + reorder surviving rows, insert fresh uploads,
+      // delete only what the provider actually removed.
+      const currentImages = await db
+        .select({ id: listingImages.id, publicId: listingImages.publicId })
+        .from(listingImages)
         .where(eq(listingImages.listingId, listingId));
+      const currentById = new Map(currentImages.map((row) => [row.id, row]));
+      const finalIds = new Set(
+        images.map((image) => image.id).filter((v): v is string => Boolean(v)),
+      );
+      for (const image of images) {
+        if (image.id && !currentById.has(image.id)) {
+          return { success: false, error: "Invalid image reference." };
+        }
+      }
+      const removed = currentImages.filter((row) => !finalIds.has(row.id));
+      removedImageIds = removed.map((row) => row.id);
+      removedPublicIds = removed
+        .map((row) => row.publicId)
+        .filter((v): v is string => Boolean(v));
     } else {
       // Block creation entirely when provider already has 5 active services.
       const [activeCount] = await db
@@ -197,37 +203,90 @@ export async function saveListing(input: unknown): Promise<ActionResult> {
             "You have reached the limit of 5 active services. Deactivate or delete an active service before creating a new one.",
         };
       }
+    }
 
-      const newStatus = status === "active" ? "pending" : status;
-      const [created] = await db
-        .insert(serviceListings)
-        .values({
-          providerId: guard.userId,
-          categoryId: category.id,
-          title: listing.title,
-          description: listing.description ?? null,
-          pricingType: finalPricingType,
-          basePrice: finalBasePrice,
-          location: listing.location ?? null,
-          estimatedDuration: listing.estimatedDuration ?? null,
-          tags: listing.tags,
-          status: newStatus,
-        })
-        .returning({ id: serviceListings.id });
+    const newStatus = listingId ? null : status === "active" ? "pending" : status;
+    // Admins to notify on the create path (read before the transaction).
+    const admins =
+      !listingId && newStatus === "pending"
+        ? await db
+            .select({ id: user.id })
+            .from(user)
+            .where(eq(user.role, "admin"))
+        : [];
 
-      if (!created) {
-        return { success: false, error: "Failed to create listing." };
-      }
-      listingId = created.id;
+    // Fresh uploads at their final positions (kept rows are reordered
+    // inside the transaction on the edit path).
+    const addedWithIndex = images
+      .map((image, index) => ({ image, index }))
+      .filter(({ image }) => !image.id);
 
-      if (newStatus === "pending") {
-        const admins = await db
-          .select({ id: user.id })
-          .from(user)
-          .where(eq(user.role, "admin"));
-        if (admins.length > 0) {
+    // ---- One transaction for ALL writes: listing + tiers + images +
+    // admin notifications commit atomically, so a listing can never be
+    // left half-saved. ----
+    await db.transaction(async (tx) => {
+      if (listingId) {
+        await tx
+          .update(serviceListings)
+          .set({
+            title: listing.title,
+            description: listing.description ?? null,
+            categoryId: category.id,
+            pricingType: finalPricingType,
+            basePrice: finalBasePrice,
+            location: listing.location ?? null,
+            estimatedDuration: listing.estimatedDuration ?? null,
+            tags: listing.tags,
+            status,
+          })
+          .where(eq(serviceListings.id, listingId));
+
+        await tx
+          .delete(serviceTiers)
+          .where(eq(serviceTiers.listingId, listingId));
+        if (removedImageIds.length > 0) {
+          await tx.delete(listingImages).where(
+            and(
+              eq(listingImages.listingId, listingId),
+              inArray(listingImages.id, removedImageIds),
+            ),
+          );
+        }
+        for (const [index, image] of images.entries()) {
+          if (!image.id) continue;
+          await tx
+            .update(listingImages)
+            .set({
+              altText: image.altText || listing.title,
+              displayOrder: index,
+            })
+            .where(eq(listingImages.id, image.id));
+        }
+      } else {
+        const [created] = await tx
+          .insert(serviceListings)
+          .values({
+            providerId: guard.userId,
+            categoryId: category.id,
+            title: listing.title,
+            description: listing.description ?? null,
+            pricingType: finalPricingType,
+            basePrice: finalBasePrice,
+            location: listing.location ?? null,
+            estimatedDuration: listing.estimatedDuration ?? null,
+            tags: listing.tags,
+            status: newStatus!,
+          })
+          .returning({ id: serviceListings.id });
+
+        if (!created) {
+          throw new Error("Failed to create listing.");
+        }
+        listingId = created.id;
+
+        if (newStatus === "pending" && admins.length > 0) {
           const { notifications } = await import("@/lib/db/schema");
-          await db.insert(notifications).values(
+          await tx.insert(notifications).values(
             admins.map((a) => ({
               id: crypto.randomUUID(),
               userId: a.id,
@@ -238,30 +297,43 @@ export async function saveListing(input: unknown): Promise<ActionResult> {
           );
         }
       }
-    }
 
-    if (tiers.length > 0) {
-      await db.insert(serviceTiers).values(
-        tiers.map((tier, index) => ({
-          listingId: listingId!,
-          name: tier.name,
-          description: tier.description ?? null,
-          price: tier.priceCents,
-          displayOrder: tier.displayOrder || index,
-        })),
+      if (tiers.length > 0) {
+        await tx.insert(serviceTiers).values(
+          tiers.map((tier, index) => ({
+            listingId: listingId!,
+            name: tier.name,
+            description: tier.description ?? null,
+            price: tier.priceCents,
+            displayOrder: tier.displayOrder || index,
+          })),
+        );
+      }
+
+      if (addedWithIndex.length > 0) {
+        await tx.insert(listingImages).values(
+          addedWithIndex.map(({ image, index }) => ({
+            listingId: listingId!,
+            publicId: image.publicId!,
+            secureUrl: image.secureUrl!,
+            altText: image.altText || listing.title,
+            displayOrder: index,
+          })),
+        );
+      }
+    });
+
+    // ---- Post-commit side effects (never inside the transaction) ----
+    if (addedWithIndex.length > 0) {
+      await consumePendingUploads(
+        guard.userId,
+        addedWithIndex
+          .map(({ image }) => image.publicId)
+          .filter((v): v is string => Boolean(v)),
       );
     }
-
-    if (images.length > 0) {
-      await db.insert(listingImages).values(
-        images.map((image, index) => ({
-          listingId: listingId!,
-          imageData: image.base64,
-          imageMime: image.mimeType,
-          altText: image.altText || listing.title,
-          displayOrder: index,
-        })),
-      );
+    for (const publicId of removedPublicIds) {
+      void destroyAsset(publicId);
     }
 
     revalidatePath("/provider/my-services");
@@ -272,6 +344,9 @@ export async function saveListing(input: unknown): Promise<ActionResult> {
     return { success: true };
   } catch (err) {
     console.error(err);
+    if (err instanceof Error && err.message === "Failed to create listing.") {
+      return { success: false, error: err.message };
+    }
     return {
       success: false,
       error: "Failed to save listing. Please try again.",
@@ -299,7 +374,16 @@ export async function deleteListing(listingId: string): Promise<ActionResult> {
       };
     }
 
+    const doomed = await db
+      .select({ publicId: listingImages.publicId })
+      .from(listingImages)
+      .where(eq(listingImages.listingId, listingId));
+
     await db.delete(serviceListings).where(eq(serviceListings.id, listingId));
+
+    for (const row of doomed) {
+      if (row.publicId) void destroyAsset(row.publicId);
+    }
 
     revalidatePath("/provider/my-services");
     revalidatePath("/my-services");

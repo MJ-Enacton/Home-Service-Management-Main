@@ -7,6 +7,7 @@ import { providerAvailability, providerProfiles } from "@/lib/db/schema";
 import type { AvailabilityWindow } from "@/lib/availability";
 import { hasPassword } from "@/lib/auth/passwordConfigured";
 import { ChangePasswordDialog } from "@/components/profile/change-password-dialog";
+import { SignOutCard } from "@/components/auth/SignOutDialog";
 import { ProviderProfileEditor } from "@/components/profile/ProviderProfileEditor";
 import { AvailabilityEditor } from "@/components/profile/AvailabilityEditor";
 import { SharedProfileHeader } from "@/components/profile/SharedProfileHeader";
@@ -33,7 +34,7 @@ export default async function ProviderProfilePage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-6 md:px-6">
-      <BackButton className="mb-3" />
+      <BackButton className="mb-3" href="/provider/dashboard" />
       <div className="mb-6">
         <h1 className="text-xl font-semibold tracking-tight">Profile</h1>
         <p className="mt-1 text-sm text-muted-foreground">Personal info, address and availability.</p>
@@ -85,11 +86,13 @@ export default async function ProviderProfilePage() {
             bio: providerProfile?.bio ?? "",
             yearsExperience: providerProfile?.yearsExperience ?? 0,
             serviceAreas: Array.isArray(providerProfile?.serviceAreas) ? providerProfile.serviceAreas : [],
-            hasAvatar: Boolean(providerProfile?.avatarData),
-            avatarVersion: Math.floor((providerProfile?.updatedAt?.getTime() ?? 0) / 1000),
+            hasAvatar: Boolean(providerProfile?.avatarUrl),
+            avatarPublicId: providerProfile?.avatarPublicId ?? null,
+            avatarUrl: providerProfile?.avatarUrl ?? null,
           }}
         />
         <AvailabilityEditor initial={availability} />
+        <SignOutCard />
       </div>
     </main>
   );

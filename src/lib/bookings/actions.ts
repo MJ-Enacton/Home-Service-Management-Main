@@ -7,7 +7,13 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/db";
-import { bookings, notifications, reviews } from "@/lib/db/schema";
+import {
+  bookings,
+  notifications,
+  reviews,
+  serviceListings,
+  user,
+} from "@/lib/db/schema";
 import type { ActionResult } from "@/types";
 import { reviewSchema } from "@/lib/validators";
 import {
@@ -20,6 +26,8 @@ import {
 } from "@/lib/booking-transitions";
 import { emitToUser } from "@/lib/socket/emit";
 import { pushUnreadCount } from "@/lib/socket/notify";
+import { sendMail } from "@/lib/email/send";
+import { bookingCompletedTemplate } from "@/lib/email/templates";
 
 async function getSession() {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -40,8 +48,8 @@ export async function respondToBookingRequest(
   }
 
   const result = accept
-    ? await confirmBooking(session.user.id, bookingId)
-    : await declineBooking(session.user.id, bookingId);
+    ? await confirmBooking(session.user.id, bookingId, session.user.name)
+    : await declineBooking(session.user.id, bookingId, session.user.name);
 
   if (!result) {
     return {
@@ -55,8 +63,13 @@ export async function respondToBookingRequest(
   // Notify the customer; the provider's copy lives on /notifications.
   await notifyBookingUpdate({
     userId: result.customerId,
-    actorName: session.user.name,
     result,
+    notification: {
+      id: result.notificationId,
+      title: result.notificationTitle,
+      message: result.notificationMessage,
+      type: result.notificationType,
+    },
   });
   // Also push to the actor so their own my-bookings page refreshes.
   emitToUser(session.user.id, "booking:updated", {
@@ -74,7 +87,11 @@ export async function respondToBookingRequest(
 export async function startJob(bookingId: string): Promise<ActionResult> {
   const session = await getSession();
 
-  const result = await startBooking(session.user.id, bookingId);
+  const result = await startBooking(
+    session.user.id,
+    bookingId,
+    session.user.name,
+  );
   if (!result) {
     return {
       success: false,
@@ -84,8 +101,13 @@ export async function startJob(bookingId: string): Promise<ActionResult> {
 
   await notifyBookingUpdate({
     userId: result.customerId,
-    actorName: session.user.name,
     result,
+    notification: {
+      id: result.notificationId,
+      title: result.notificationTitle,
+      message: result.notificationMessage,
+      type: result.notificationType,
+    },
   });
   emitToUser(session.user.id, "booking:updated", {
     bookingId: result.id,
@@ -102,7 +124,11 @@ export async function startJob(bookingId: string): Promise<ActionResult> {
 export async function completeJob(bookingId: string): Promise<ActionResult> {
   const session = await getSession();
 
-  const result = await completeBooking(session.user.id, bookingId);
+  const result = await completeBooking(
+    session.user.id,
+    bookingId,
+    session.user.name,
+  );
   if (!result) {
     return {
       success: false,
@@ -112,14 +138,48 @@ export async function completeJob(bookingId: string): Promise<ActionResult> {
 
   await notifyBookingUpdate({
     userId: result.customerId,
-    actorName: session.user.name,
     result,
+    notification: {
+      id: result.notificationId,
+      title: result.notificationTitle,
+      message: result.notificationMessage,
+      type: result.notificationType,
+    },
   });
   emitToUser(session.user.id, "booking:updated", {
     bookingId: result.id,
     bookingNumber: result.bookingNumber,
     status: result.status,
   });
+
+  // Thank-you email to the customer (best-effort, never fails the action).
+  void (async () => {
+    const [detail] = await db
+      .select({
+        listingTitle: serviceListings.title,
+        customerEmail: user.email,
+        customerName: user.name,
+      })
+      .from(bookings)
+      .innerJoin(serviceListings, eq(bookings.listingId, serviceListings.id))
+      .innerJoin(user, eq(bookings.customerId, user.id))
+      .where(eq(bookings.id, result.id));
+    if (!detail) return;
+    const appBase =
+      process.env.BETTER_AUTH_URL ??
+      process.env.NEXT_PUBLIC_APP_URL ??
+      "http://localhost:3000";
+    await sendMail({
+      to: detail.customerEmail,
+      ...bookingCompletedTemplate({
+        customerName: detail.customerName,
+        bookingNumber: result.bookingNumber,
+        serviceTitle: detail.listingTitle,
+        providerName: session.user.name,
+        reviewUrl: `${appBase}/customer/my-bookings?review=${result.id}`,
+      }),
+    });
+  })().catch((err) => console.error("[email] completion mail failed:", err));
 
   revalidatePath("/my-bookings");
   revalidatePath("/customer/my-bookings");
@@ -132,7 +192,11 @@ export async function cancelMyBooking(
 ): Promise<ActionResult> {
   const session = await getSession();
 
-  const result = await cancelBooking(session.user.id, bookingId);
+  const result = await cancelBooking(
+    session.user.id,
+    bookingId,
+    session.user.name,
+  );
   if (!result) {
     return {
       success: false,
@@ -147,8 +211,13 @@ export async function cancelMyBooking(
       : result.customerId;
   await notifyBookingUpdate({
     userId: counterpartyId,
-    actorName: session.user.name,
     result,
+    notification: {
+      id: result.notificationId,
+      title: result.notificationTitle,
+      message: result.notificationMessage,
+      type: result.notificationType,
+    },
   });
   emitToUser(session.user.id, "booking:updated", {
     bookingId: result.id,
@@ -205,24 +274,28 @@ export async function submitReview(input: {
       };
     }
 
-    await db.insert(reviews).values({
-      bookingId: booking.id,
-      reviewerId: session.user.id,
-      providerId: booking.providerId,
-      listingId: booking.listingId,
-      rating: parsed.data.rating,
-      comment: parsed.data.comment ?? null,
-    });
-
-    // Thank-you notification for the provider.
+    // Review + provider notification commit atomically: a review can
+    // never exist without its notification, and vice versa.
     const notificationId = crypto.randomUUID();
-    await db.insert(notifications).values({
-      id: notificationId,
-      userId: booking.providerId,
-      bookingId: booking.id,
-      type: "new_review",
-      title: "New review received",
-      message: `${session.user.name} left a ${parsed.data.rating}-star review on booking ${booking.bookingNumber}.`,
+    await db.transaction(async (tx) => {
+      await tx.insert(reviews).values({
+        bookingId: booking.id,
+        reviewerId: session.user.id,
+        providerId: booking.providerId,
+        listingId: booking.listingId,
+        rating: parsed.data.rating,
+        comment: parsed.data.comment ?? null,
+      });
+
+      // Thank-you notification for the provider.
+      await tx.insert(notifications).values({
+        id: notificationId,
+        userId: booking.providerId,
+        bookingId: booking.id,
+        type: "new_review",
+        title: "New review received",
+        message: `${session.user.name} left a ${parsed.data.rating}-star review on booking ${booking.bookingNumber}.`,
+      });
     });
     emitToUser(booking.providerId, "notification:new", {
       id: notificationId,
@@ -238,6 +311,10 @@ export async function submitReview(input: {
     revalidatePath("/my-bookings");
     revalidatePath("/customer/my-bookings");
     revalidatePath("/provider/my-bookings");
+    revalidatePath(`/services/${booking.listingId}`);
+    revalidatePath("/services");
+    revalidatePath("/customer/notifications");
+    revalidatePath("/provider/notifications");
     return { success: true };
   } catch (err) {
     console.error(err);

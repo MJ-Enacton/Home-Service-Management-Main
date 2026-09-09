@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { pricingTypeEnum } from "@/lib/db/schema";
+import { isDateWithinBookingWindow } from "@/lib/booking-window";
 
 export const signInSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address." }),
@@ -64,29 +65,41 @@ export type TierInput = z.infer<typeof tierSchema>;
 // ============================================================
 
 export const bookingDetailsSchema = z.object({
-  streetAddress: z.string().min(5, "Street address is required.").max(200),
+  streetAddress: z.string().min(5, "Street address is required.").max(500),
   jobNotes: z.string().max(2000).optional(),
   contactFullName: z.string().max(120).optional(),
   contactEmail: z.string().min(1, "Email is required.").email("Enter a valid email."),
   contactPhone: z.string().min(1, "Phone number is required.").max(30),
 });
 
-export const bookingScheduleSchema = z.object({
-  /** ISO date (YYYY-MM-DD) */
-  scheduledDate: z.string().optional(),
-  /** canonical 24h slot start, e.g. "09:30" */
-  scheduledTimeSlot: z
-    .string()
-    .regex(HH_MM, "Pick a valid time slot.")
-    .optional()
-    .or(z.literal("")),
-  isContactless: z.boolean().default(false),
-  isUrgent: z.boolean().default(false),
-  tierId: z.uuid().nullish(),
-}).refine(data => data.isUrgent || (data.scheduledDate && data.scheduledTimeSlot), {
-  message: "Date and time are required for non-urgent jobs.",
-  path: ["scheduledDate"],
-});
+export const bookingScheduleSchema = z
+  .object({
+    /** ISO date (YYYY-MM-DD) */
+    scheduledDate: z.string().optional(),
+    /** canonical 24h slot start, e.g. "09:30" */
+    scheduledTimeSlot: z
+      .string()
+      .regex(HH_MM, "Pick a valid time slot.")
+      .optional()
+      .or(z.literal("")),
+    isContactless: z.boolean().default(false),
+    isUrgent: z.boolean().default(false),
+    tierId: z.uuid().nullish(),
+  })
+  .refine((data) => data.isUrgent || (data.scheduledDate && data.scheduledTimeSlot), {
+    message: "Date and time are required for non-urgent jobs.",
+    path: ["scheduledDate"],
+  })
+  .refine(
+    (data) => {
+      if (data.isUrgent || !data.scheduledDate) return true;
+      return isDateWithinBookingWindow(data.scheduledDate);
+    },
+    {
+      message: "Bookings are allowed only within the next 7 days (today included).",
+      path: ["scheduledDate"],
+    },
+  );
 
 export type BookingDetailsInput = z.infer<typeof bookingDetailsSchema>;
 export type BookingScheduleInput = z.infer<typeof bookingScheduleSchema>;

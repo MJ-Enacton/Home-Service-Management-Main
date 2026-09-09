@@ -1,8 +1,8 @@
-/* eslint-disable @next/next/no-img-element */
 import { Calendar, Clock, Hammer, MapPin, Star } from "lucide-react";
 import Link from "next/link";
 import { enumLabel, formatCents, pricingUnitLabel } from "@/lib/format";
 import type { ServiceListingCard } from "@/types/service";
+import { ListingCoverImage } from "@/components/ListingCoverImage";
 import { useState } from "react";
 
 export default function ListingRow({
@@ -16,20 +16,22 @@ export default function ListingRow({
   return (
     <Link
       href={`/services/${listing.id}`}
-      className="group flex gap-3 overflow-hidden rounded-xl border bg-white p-3 transition hover:border-zinc-300 dark:bg-zinc-900 dark:border-zinc-800"
+      className="group flex flex-col gap-3 overflow-hidden rounded-xl border bg-white p-3 transition hover:border-zinc-300 sm:flex-row dark:bg-zinc-900 dark:border-zinc-800"
     >
-      <div className="relative w-40 shrink-0 overflow-hidden rounded-lg bg-zinc-50 sm:w-48 dark:bg-zinc-800">
+      <div className="relative w-full shrink-0 overflow-hidden rounded-lg bg-zinc-50 sm:w-48 dark:bg-zinc-800">
         {!showImage ? (
-          <div className="flex h-28 w-full items-center justify-center sm:h-full">
+          <div className="flex h-36 w-full items-center justify-center sm:h-full">
             <Hammer className="size-5 text-zinc-400" />
           </div>
         ) : (
-          <img
-            src={`/api/services/${listing.id}/image`}
+          <ListingCoverImage
+            publicId={listing.coverImagePublicId}
             alt={listing.title}
-            onError={() => setImageFailed(true)}
-            className="h-28 w-full object-cover sm:h-full"
-            loading="lazy"
+            className="h-36 w-full object-cover sm:h-full"
+            sizes="(max-width: 640px) 100vw, 200px"
+            width={400}
+            height={300}
+            onMissing={() => setImageFailed(true)}
           />
         )}
         {listing.categoryName && (
@@ -92,7 +94,7 @@ export default function ListingRow({
                 /{pricingUnitLabel(listing.pricingType)}
               </span>
             </p>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-1.5 text-sm font-medium text-white transition-colors group-hover:bg-primary/90">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-1.5 text-sm font-medium whitespace-nowrap text-white transition-colors group-hover:bg-primary/90">
               <Clock className="size-3.5" />
               View Deal
             </span>

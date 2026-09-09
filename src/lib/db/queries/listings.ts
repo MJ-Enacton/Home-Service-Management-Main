@@ -97,6 +97,7 @@ interface ListingRow {
   avgRating: number | null;
   reviewCount: number;
   hasImage: boolean;
+  coverImagePublicId: string | null;
 }
 
 function rowToCard(row: ListingRow): ServiceListingCard {
@@ -125,6 +126,7 @@ function rowToCard(row: ListingRow): ServiceListingCard {
       row.avgRating === null ? null : Math.round(row.avgRating * 10) / 10,
     ratingCount: row.reviewCount,
     hasImage: row.hasImage ?? false,
+    coverImagePublicId: row.coverImagePublicId ?? null,
   };
 }
 
@@ -208,8 +210,12 @@ export async function listListings(
       avgRating: ratingAgg.avgRating,
       reviewCount: sql<number>`coalesce(${ratingAgg.reviewCount}, 0)::int`,
       hasImage:
-        sql<boolean>`exists (select 1 from listing_images li where li.listing_id = ${serviceListings.id}) or ${categories.imageData} is not null`.as(
+        sql<boolean>`exists (select 1 from listing_images li where li.listing_id = ${serviceListings.id} and (li.secure_url is not null or li.public_id is not null))`.as(
           "has_image",
+        ),
+      coverImagePublicId:
+        sql<string | null>`(select li.public_id from listing_images li where li.listing_id = ${serviceListings.id} and li.public_id is not null order by li.display_order asc, li.created_at asc limit 1)`.as(
+          "cover_image_public_id",
         ),
     })
     .from(serviceListings)
@@ -242,6 +248,8 @@ export async function listListings(
 export interface ListingImageSummary {
   id: string;
   altText: string | null;
+  publicId: string | null;
+  secureUrl: string | null;
 }
 
 export interface ListingReviewSummary {
@@ -250,6 +258,13 @@ export interface ListingReviewSummary {
   comment: string | null;
   reviewerName: string;
   createdAt: Date;
+}
+
+export type ReviewSort = "top" | "recent" | "highest" | "lowest";
+
+export interface RatingBreakdownRow {
+  rating: number;
+  count: number;
 }
 
 export interface ListingDetail {
@@ -261,6 +276,67 @@ export interface ListingDetail {
   images: ListingImageSummary[];
   providerBio: string | null;
   reviews: ListingReviewSummary[];
+  ratingBreakdown: RatingBreakdownRow[];
+}
+
+/** 5→1 distribution for a listing (visible reviews only). */
+export async function getRatingBreakdown(
+  listingId: string,
+): Promise<RatingBreakdownRow[]> {
+  try {
+    const rows = await db
+      .select({
+        rating: reviews.rating,
+        count: sql<number>`count(*)::int`.as("count"),
+      })
+      .from(reviews)
+      .where(and(eq(reviews.listingId, listingId), eq(reviews.isVisible, true)))
+      .groupBy(reviews.rating);
+    return rows;
+  } catch {
+    return [];
+  }
+}
+
+/** Sorted + paginated visible reviews for a listing. */
+export async function getListingReviews(
+  listingId: string,
+  sort: ReviewSort = "top",
+  limit = 6,
+  offset = 0,
+): Promise<ListingReviewSummary[]> {
+  try {
+    const orderBy =
+      sort === "recent"
+        ? [desc(reviews.createdAt)]
+        : sort === "highest"
+          ? [desc(reviews.rating), desc(reviews.createdAt)]
+          : sort === "lowest"
+            ? [asc(reviews.rating), desc(reviews.createdAt)]
+            : // "top": highest-rated first, written comments before bare ratings
+              [
+                desc(reviews.rating),
+                sql`case when ${reviews.comment} is null or ${reviews.comment} = '' then 1 else 0 end`,
+                desc(reviews.createdAt),
+              ];
+    const rows = await db
+      .select({
+        id: reviews.id,
+        rating: reviews.rating,
+        comment: reviews.comment,
+        reviewerName: user.name,
+        createdAt: reviews.createdAt,
+      })
+      .from(reviews)
+      .innerJoin(user, eq(reviews.reviewerId, user.id))
+      .where(and(eq(reviews.listingId, listingId), eq(reviews.isVisible, true)))
+      .orderBy(...orderBy)
+      .limit(limit)
+      .offset(offset);
+    return rows;
+  } catch {
+    return [];
+  }
 }
 
 /** Single listing for the detail page; null when missing or invalid id. */
@@ -294,7 +370,7 @@ export async function getListingDetail(
 
     if (!row) return null;
 
-    const [tiers, images, reviewRows] = await Promise.all([
+    const [tiers, images, reviewRows, breakdownRows] = await Promise.all([
       db
         .select({
           id: serviceTiers.id,
@@ -309,23 +385,14 @@ export async function getListingDetail(
         .select({
           id: listingImages.id,
           altText: listingImages.altText,
+          publicId: listingImages.publicId,
+          secureUrl: listingImages.secureUrl,
         })
         .from(listingImages)
         .where(eq(listingImages.listingId, id))
         .orderBy(asc(listingImages.displayOrder), asc(listingImages.createdAt)),
-      db
-        .select({
-          id: reviews.id,
-          rating: reviews.rating,
-          comment: reviews.comment,
-          reviewerName: user.name,
-          createdAt: reviews.createdAt,
-        })
-        .from(reviews)
-        .innerJoin(user, eq(reviews.reviewerId, user.id))
-        .where(and(eq(reviews.listingId, id), eq(reviews.isVisible, true)))
-        .orderBy(desc(reviews.createdAt))
-        .limit(10),
+      getListingReviews(id, "top", 6, 0),
+      getRatingBreakdown(id),
     ]);
 
     const base = row.card;
@@ -348,6 +415,7 @@ export async function getListingDetail(
       ratingCount: row.reviewCount,
       hasTiers: tiers.length > 0,
       hasImage: images.length > 0,
+      coverImagePublicId: images[0]?.publicId ?? null,
     };
 
     return {
@@ -359,6 +427,7 @@ export async function getListingDetail(
       images,
       providerBio: row.providerBio,
       reviews: reviewRows,
+      ratingBreakdown: breakdownRows,
     };
   } catch {
     // Non-uuid ids (or transient DB errors) simply mean "not found".

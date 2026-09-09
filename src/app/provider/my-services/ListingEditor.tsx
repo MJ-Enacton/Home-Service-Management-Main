@@ -10,6 +10,8 @@ import type { TierOption } from "@/types";
 import { parseCents } from "@/lib/format";
 import type { ActionResult } from "@/types";
 import { saveListing } from "./actions";
+import { uploadToCloudinary } from "@/lib/cloudinary-client";
+import { getCldImageUrl } from "next-cloudinary";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,6 +28,13 @@ import { toast } from "@/components/ui/toast";
 
 const MAX_IMAGE_MB = 2;
 
+export interface EditorExistingImage {
+  id: string;
+  publicId: string | null;
+  secureUrl: string | null;
+  altText: string | null;
+}
+
 export interface EditorInitialData {
   id: string;
   title: string;
@@ -38,8 +47,8 @@ export interface EditorInitialData {
   tags: string[];
   status: "active" | "inactive" | "draft" | "pending" | "rejected";
   tiers: TierOption[];
-  /** how many images are already stored server-side */
-  imageCount: number;
+  /** images already stored server-side, in display order */
+  images: EditorExistingImage[];
 }
 
 interface CategoryOptionLite {
@@ -47,10 +56,27 @@ interface CategoryOptionLite {
   name: string;
 }
 
-interface PendingImage {
+interface EditorImage {
+  key: string;
+  /** DB row id — present only for already-saved images */
+  id?: string;
+  publicId: string;
+  secureUrl: string;
   previewUrl: string;
-  base64: string;
-  mimeType: string;
+  uploading: boolean;
+}
+
+/** Best-effort delete of an upload discarded before save (stale purge covers failures). */
+async function discardPendingUpload(publicId: string): Promise<void> {
+  try {
+    await fetch("/api/cloudinary/orphan", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ public_id: publicId, purpose: "listings" }),
+    });
+  } catch {
+    // The 24h stale purge in the sign route cleans up anything missed.
+  }
 }
 
 interface TierDraft {
@@ -101,18 +127,46 @@ export function ListingEditor({ categories, initial }: ListingEditorProps) {
   );
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [images, setImages] = useState<PendingImage[]>([]);
+  const cancelledUploads = useRef(new Set<string>());
+  const uploadSeq = useRef(0);
+  const [images, setImages] = useState<EditorImage[]>(() => {
+    if (!initial) return [];
+    const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+    return initial.images.map((img) => {
+      let preview = "";
+      if (img.secureUrl) {
+        preview = img.secureUrl;
+      } else if (img.publicId && cloudName) {
+        preview = getCldImageUrl({
+          src: img.publicId,
+          width: 320,
+          height: 256,
+          crop: "fill",
+          gravity: "auto",
+        });
+      }
+      return {
+        key: img.id,
+        id: img.id,
+        publicId: img.publicId ?? "",
+        secureUrl: img.secureUrl ?? "",
+        previewUrl: preview,
+        uploading: false,
+      };
+    });
+  });
   const [imageError, setImageError] = useState("");
-  // When editing, existing stored images are replaced wholesale on save.
-  const hadExistingImages = (initial?.imageCount ?? 0) > 0;
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const isUploading = uploadingCount > 0;
+  const usedSlots = images.length + uploadingCount;
 
-  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     setImageError("");
     const files = Array.from(event.target.files ?? []);
     event.target.value = "";
     if (files.length === 0) return;
 
-    const room = 6 - images.length;
+    const room = 6 - usedSlots;
     if (room <= 0) {
       setImageError("Up to 6 images allowed.");
       return;
@@ -127,23 +181,67 @@ export function ListingEditor({ categories, initial }: ListingEditorProps) {
         setImageError(`Each image must be smaller than ${MAX_IMAGE_MB} MB.`);
         continue;
       }
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result as string;
-        const base64 = dataUrl.split(",")[1] ?? "";
-        if (base64) {
+      const localPreview = URL.createObjectURL(file);
+      uploadSeq.current += 1;
+      const tempKey = `temp-${uploadSeq.current}`;
+      // Optimistic placeholder so the grid feels instant while signing+uploading.
+      setImages((prev) => [
+        ...prev,
+        {
+          key: tempKey,
+          publicId: tempKey,
+          secureUrl: "",
+          previewUrl: localPreview,
+          uploading: true,
+        },
+      ]);
+      setUploadingCount((c) => c + 1);
+      try {
+        const uploaded = await uploadToCloudinary(file, "listings");
+        if (cancelledUploads.current.has(tempKey)) {
+          // Removed mid-upload: destroy the orphan right away.
+          cancelledUploads.current.delete(tempKey);
+          void discardPendingUpload(uploaded.publicId);
+          setImages((prev) => prev.filter((img) => img.key !== tempKey));
+        } else {
           setImages((prev) =>
-            prev.length < 6
-              ? [...prev, { previewUrl: dataUrl, base64, mimeType: file.type }]
-              : prev,
+            prev.map((img) =>
+              img.key === tempKey
+                ? {
+                    key: uploaded.publicId,
+                    publicId: uploaded.publicId,
+                    secureUrl: uploaded.secureUrl,
+                    previewUrl: uploaded.secureUrl,
+                    uploading: false,
+                  }
+                : img,
+            ),
           );
         }
-      };
-      reader.readAsDataURL(file);
+      } catch (err) {
+        setImages((prev) => prev.filter((img) => img.key !== tempKey));
+        setImageError(
+          err instanceof Error ? err.message : "Image upload failed.",
+        );
+      } finally {
+        URL.revokeObjectURL(localPreview);
+        setUploadingCount((c) => Math.max(0, c - 1));
+      }
     }
   }
 
   function removeImage(index: number) {
+    const target = images[index];
+    if (!target) return;
+    if (target.uploading) {
+      // Upload still in flight — the success handler destroys the orphan.
+      cancelledUploads.current.add(target.key);
+    } else if (!target.id && target.publicId) {
+      // Fresh upload, never saved — destroy now so Cloudinary stays clean.
+      void discardPendingUpload(target.publicId);
+    }
+    // Already-saved images are only destroyed server-side on save (diff),
+    // so navigating away without saving never loses data.
     setImages((prev) => prev.filter((_, i) => i !== index));
   }
 
@@ -162,7 +260,13 @@ export function ListingEditor({ categories, initial }: ListingEditorProps) {
   }
 
   function handleSubmit() {
-    const basePriceCents = parseCents(basePriceDollars);
+    if (isUploading) {
+      toast.add({
+        title: "Wait for image uploads to finish.",
+        type: "error",
+      });
+      return;
+    }    const basePriceCents = parseCents(basePriceDollars);
     if (basePriceCents === null || !title.trim()) {
       toast.add({
         title: "Title and a valid base price are required.",
@@ -221,11 +325,14 @@ export function ListingEditor({ categories, initial }: ListingEditorProps) {
           priceCents: parseCents(tier.priceDollars)!,
           displayOrder: index,
         })),
-        images: images.map((image) => ({
-          base64: image.base64,
-          mimeType: image.mimeType,
-          altText: title.trim(),
-        })),
+        images: images
+          .filter((image) => !image.uploading && (image.id || image.secureUrl))
+          .map((image) => ({
+            id: image.id ?? null,
+            publicId: image.publicId || null,
+            secureUrl: image.secureUrl || null,
+            altText: title.trim(),
+          })),
       });
 
       if (!result.success) {
@@ -475,10 +582,10 @@ export function ListingEditor({ categories, initial }: ListingEditorProps) {
               </span>
             </div>
 
-            {(hadExistingImages || images.length > 0) && (
+            {images.length > 0 && (
               <p className="rounded-lg bg-muted p-2.5 text-xs text-muted-foreground">
                 {initial
-                  ? `Saving replaces the ${initial.imageCount} existing photo(s).`
+                  ? "Removing a photo deletes it when you save. The first photo is the cover image."
                   : "The first photo is used as the cover image."}
               </p>
             )}
@@ -486,15 +593,25 @@ export function ListingEditor({ categories, initial }: ListingEditorProps) {
             <div className="flex flex-wrap gap-3">
               {images.map((image, index) => (
                 <div
-                  key={`${image.previewUrl.slice(-16)}-${index}`}
+                  key={image.key}
                   className="relative h-24 w-32 overflow-hidden rounded-lg ring-1 ring-border"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={image.previewUrl}
-                    alt={`Upload ${index + 1}`}
-                    className="h-full w-full object-cover"
+                    alt={image.id ? `Photo ${index + 1}` : `Upload ${index + 1}`}
+                    className={`h-full w-full object-cover ${image.uploading ? "opacity-50" : ""}`}
                   />
+                  {image.uploading && (
+                    <span className="absolute inset-x-0 bottom-0 bg-black/60 py-0.5 text-center text-[10px] font-medium text-white">
+                      Uploading…
+                    </span>
+                  )}
+                  {!image.uploading && !image.id && (
+                    <span className="absolute top-1 left-1 rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                      New
+                    </span>
+                  )}
                   <button
                     type="button"
                     aria-label={`Remove photo ${index + 1}`}
@@ -506,7 +623,7 @@ export function ListingEditor({ categories, initial }: ListingEditorProps) {
                 </div>
               ))}
 
-              {images.length < 6 && (
+              {usedSlots < 6 && (
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
@@ -563,12 +680,17 @@ export function ListingEditor({ categories, initial }: ListingEditorProps) {
               <Button
                 className="w-full"
                 onClick={handleSubmit}
-                disabled={isPending}
+                disabled={isPending || isUploading}
               >
                 {isPending ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />
                     Saving…
+                  </>
+                ) : isUploading ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Uploading…
                   </>
                 ) : (
                   <>

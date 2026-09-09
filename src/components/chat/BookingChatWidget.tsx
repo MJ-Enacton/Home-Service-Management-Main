@@ -9,7 +9,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import type { ChatMessage, ChatSummary } from "./actions";
 import { getActiveChats, getChatMessages, sendChatMessage } from "./actions";
 import { getSocket } from "@/lib/socket/client";
-import { formatTimeDisplay } from "@/lib/format";
+import { formatDateOnly, formatTimeDisplay } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
@@ -377,14 +377,7 @@ export function BookingChatWidget() {
                 >
                   {activeChat?.bookingNumber} ·{" "}
                   {activeChat &&
-                    new Date(activeChat.scheduledDate).toLocaleDateString(
-                      "en-US",
-                      {
-                        weekday: "short",
-                        month: "short",
-                        day: "numeric",
-                      },
-                    )}{" "}
+                    formatDateOnly(activeChat.scheduledDate)}{" "}
                   ·{" "}
                   {activeChat && formatTimeDisplay(activeChat.scheduledTimeSlot)}
                 </Link>

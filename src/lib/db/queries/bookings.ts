@@ -40,11 +40,9 @@ interface BookingRow {
   listingTitle: string;
   categoryName: string | null;
   counterpartyName: string;
-  scheduledDate: Date;
+  scheduledDate: string;
   scheduledTimeSlot: string;
   streetAddress: string;
-  city: string | null;
-  zipCode: string | null;
   totalAmountCents: number;
   amountPaidCents: number | null;
   reviewed: boolean;
@@ -52,9 +50,6 @@ interface BookingRow {
 }
 
 function rowToListItem(row: BookingRow): BookingListItem {
-  const addressLine = [row.streetAddress, row.city, row.zipCode]
-    .filter(Boolean)
-    .join(", ");
   return {
     id: row.id,
     bookingNumber: row.bookingNumber,
@@ -65,7 +60,7 @@ function rowToListItem(row: BookingRow): BookingListItem {
     counterpartyName: row.counterpartyName,
     scheduledDate: row.scheduledDate,
     scheduledTimeSlot: row.scheduledTimeSlot,
-    addressLine,
+    addressLine: row.streetAddress,
     totalAmountCents: row.totalAmountCents,
     amountPaidCents: row.amountPaidCents === 0 ? null : row.amountPaidCents,
     reviewed: row.reviewed,
@@ -89,8 +84,6 @@ export async function listBookingsForCustomer(
       scheduledDate: bookings.scheduledDate,
       scheduledTimeSlot: bookings.scheduledTimeSlot,
       streetAddress: bookings.streetAddress,
-      city: bookings.city,
-      zipCode: bookings.zipCode,
       totalAmountCents: bookings.totalAmount,
       amountPaidCents: sql<number | null>`${paidAgg.amountPaidCents}`,
       reviewed:
@@ -124,8 +117,6 @@ export async function listBookingsForProvider(
       scheduledDate: bookings.scheduledDate,
       scheduledTimeSlot: bookings.scheduledTimeSlot,
       streetAddress: bookings.streetAddress,
-      city: bookings.city,
-      zipCode: bookings.zipCode,
       totalAmountCents: bookings.totalAmount,
       amountPaidCents: sql<number | null>`${paidAgg.amountPaidCents}`,
       reviewed:

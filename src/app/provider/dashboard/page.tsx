@@ -1,11 +1,17 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/db";
-import { bookings, reviews, serviceListings } from "@/lib/db/schema";
+import { bookings, listingImages, reviews, serviceListings } from "@/lib/db/schema";
 import { user } from "@/lib/db/schema";
+import { parseLocalDate } from "@/lib/format";
+import {
+  getProviderEarningsSeries,
+  type EarningsRange,
+} from "@/lib/db/queries/earnings";
+import type { EarningsChartType } from "./EarningsChart";
 import ProviderDashboardClient from "./ProviderDashboardClient";
 
 export const dynamic = "force-dynamic";
@@ -31,12 +37,23 @@ function isThisWeek(date: Date) {
   return date >= monday && date <= sunday;
 }
 
-export default async function ProviderDashboardPage() {
+export default async function ProviderDashboardPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ range?: string; view?: string }>;
+}) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user) redirect("/sign-in");
   if (session.user.role !== "provider") redirect("/");
 
   const providerId = session.user.id;
+
+  // Chart filters live in the URL so refresh/back-button/shared links keep them.
+  const params = await searchParams;
+  const initialRange: EarningsRange =
+    params?.range === "month" ? "month" : "week";
+  const initialView: EarningsChartType =
+    params?.view === "line" ? "line" : "bar";
 
   // Active listings
   const activeListings = await db
@@ -66,7 +83,6 @@ export default async function ProviderDashboardPage() {
       completedAt: bookings.completedAt,
       isUrgent: bookings.isUrgent,
       streetAddress: bookings.streetAddress,
-      city: bookings.city,
       customerId: bookings.customerId,
     })
     .from(bookings)
@@ -93,34 +109,17 @@ export default async function ProviderDashboardPage() {
   ).length;
 
   const bookingsToday = allBookings.filter((b) =>
-    isToday(new Date(b.scheduledDate)),
+    isToday(parseLocalDate(b.scheduledDate)),
   ).length;
   const bookingsThisWeek = allBookings.filter((b) =>
-    isThisWeek(new Date(b.scheduledDate)),
+    isThisWeek(parseLocalDate(b.scheduledDate)),
   ).length;
 
-  // Earnings last 7 days (chart kept empty for now — keep labels only)
-  const earningsLast7Days: { label: string; cents: number; date: string }[] =
-    [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    d.setHours(0, 0, 0, 0);
-    const label = d.toLocaleDateString("en-US", { weekday: "short" });
-    const iso = d.toISOString().slice(0, 10);
-    const dayCents = allBookings
-      .filter((b) => {
-        if (b.status !== "completed" || !b.completedAt) return false;
-        const cd = new Date(b.completedAt);
-        return (
-          cd.getFullYear() === d.getFullYear() &&
-          cd.getMonth() === d.getMonth() &&
-          cd.getDate() === d.getDate()
-        );
-      })
-      .reduce((sum, b) => sum + (b.totalAmount ?? 0), 0);
-    earningsLast7Days.push({ label, cents: dayCents, date: iso });
-  }
+  // Earnings series for the chart (daily net, zero-filled), matching the URL filter.
+  const earningsInitial = await getProviderEarningsSeries(
+    providerId,
+    initialRange,
+  );
 
   // Upcoming bookings for "Recent requests" — show requested + confirmed (accepted), exclude cancelled/rejected/completed
   // Do not show rejected/cancelled; only upcoming that still need attention or are scheduled.
@@ -130,9 +129,9 @@ export default async function ProviderDashboardPage() {
     .filter(
       (b) =>
         (b.status === "requested" || b.status === "confirmed" || b.status === "in_progress") &&
-        new Date(b.scheduledDate) >= nowStart,
+        parseLocalDate(b.scheduledDate) >= nowStart,
     )
-    .sort((a, b) => new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime())
+    .sort((a, b) => parseLocalDate(a.scheduledDate).getTime() - parseLocalDate(b.scheduledDate).getTime())
     .slice(0, 5);
 
   // Batched: listing titles + customer names for upcoming (fixes N+1)
@@ -154,9 +153,9 @@ export default async function ProviderDashboardPage() {
     listingTitle: listingTitleById.get(b.listingId) ?? "Service",
     customerName: customerNameById.get(b.customerId) ?? "Customer",
     totalAmount: b.totalAmount,
-    scheduledDate: b.scheduledDate.toISOString(),
+    scheduledDate: b.scheduledDate,
     isUrgent: b.isUrgent,
-    location: b.city || b.streetAddress || "—",
+    location: b.streetAddress || "—",
     status: b.status as "requested" | "confirmed" | "in_progress",
   }));
 
@@ -170,13 +169,35 @@ export default async function ProviderDashboardPage() {
         .groupBy(reviews.listingId)
     : [];
   const avgByListingId = new Map(ratingRows.map((r) => [r.listingId, r.avg]));
+  // Batched: cover image per active listing (first by display order).
+  const coverRows = activeIds.length
+    ? await db
+        .select({
+          listingId: listingImages.listingId,
+          publicId: listingImages.publicId,
+        })
+        .from(listingImages)
+        .where(
+          and(
+            inArray(listingImages.listingId, activeIds),
+            isNotNull(listingImages.publicId),
+          ),
+        )
+        .orderBy(asc(listingImages.displayOrder))
+    : [];
+  const coverByListingId = new Map<string, string>();
+  for (const row of coverRows) {
+    if (!coverByListingId.has(row.listingId) && row.publicId) {
+      coverByListingId.set(row.listingId, row.publicId);
+    }
+  }
   const activeServicesStats = activeListings.map((listing) => {
     const listingBookings = allBookings.filter((b) => b.listingId === listing.id && b.status !== "cancelled");
     const revenue = listingBookings.filter((b) => b.status === "completed").reduce((s, b) => s + (b.totalAmount ?? 0), 0);
     const count = listingBookings.length;
     const avgRaw = avgByListingId.get(listing.id);
     const avg = avgRaw ? Math.round(avgRaw * 10) / 10 : 0;
-    return { id: listing.id, title: listing.title, bookings: count, revenueCents: revenue, rating: avg };
+    return { id: listing.id, title: listing.title, bookings: count, revenueCents: revenue, rating: avg, coverImagePublicId: coverByListingId.get(listing.id) ?? null };
   });
 
   const newRequestsCount = upcomingBookings.length;
@@ -191,7 +212,9 @@ export default async function ProviderDashboardPage() {
       reviewCount={reviewCount}
       bookingsToday={bookingsToday}
       bookingsThisWeek={bookingsThisWeek}
-      earningsLast7Days={earningsLast7Days}
+      earningsInitial={earningsInitial}
+      earningsRange={initialRange}
+      earningsView={initialView}
       newRequestsCount={newRequestsCount}
       recentRequests={recentRequests}
       activeServices={activeServicesStats}
