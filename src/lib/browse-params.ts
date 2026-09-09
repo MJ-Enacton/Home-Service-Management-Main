@@ -16,7 +16,7 @@
  */
 
 /** Number of listings per page (cards per grid). */
-export const PAGE_SIZE = 9;
+export const PAGE_SIZE = 12;
 
 export type SortKey = "recommended" | "price-asc" | "price-desc" | "rating";
 

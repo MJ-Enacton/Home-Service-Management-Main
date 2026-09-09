@@ -7,11 +7,7 @@ import { BriefcaseBusiness, Pencil, Plus, Trash2 } from "lucide-react";
 import type { MyListingRow } from "./page";
 import { deleteListing } from "./actions";
 import { getSocket } from "@/lib/socket/client";
-import {
-  enumLabel,
-  formatCents,
-  pricingUnitLabel,
-} from "@/lib/format";
+import { enumLabel, formatCents, pricingUnitLabel } from "@/lib/format";
 import { BackButton } from "@/components/BackButton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -112,102 +108,114 @@ export function MyServicesClient({ listings }: { listings: MyListingRow[] }) {
   }
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 pb-12 md:px-6">
-      <div className="mb-6">
-        <BackButton className="mb-3" />
-        <h1 className="text-xl font-semibold tracking-tight">My services</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Manage what customers can book — you can have up to 5 active.</p>
-      </div>
-
-      <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border bg-white px-3 py-2.5 dark:bg-zinc-900">
-        <Badge variant="secondary">{items.length} listings</Badge>
-        <Link href="/provider/my-services/new">
-          <Button size="sm">
-            <Plus className="size-4" />
-            New Service
-          </Button>
-        </Link>
-      </div>
-
-      {items.length === 0 ? (
-        <Card className="overflow-hidden border-dashed bg-muted/40">
-          <CardContent className="flex flex-col items-center gap-4 py-16 text-center">
-            <div className="rounded-full bg-primary/10 p-4">
-              <BriefcaseBusiness className="size-8 text-primary" />
-            </div>
-            <div>
-              <p className="text-lg font-semibold">No services yet</p>
-              <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                Create your first service listing so customers can find and
-                book you.
-              </p>
-            </div>
-            <Link href="/provider/my-services/new" className="mt-2">
-              <Button>Create Your First Service</Button>
-            </Link>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {items.map((listing) => (
-            <Card key={listing.id} className="flex flex-col">
-              <CardContent className="flex flex-1 flex-col gap-3 p-5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Badge
-                    variant="outline"
-                    className={`capitalize ${STATUS_BADGE[listing.status]}`}
-                  >
-                    {listing.status}
-                  </Badge>
-                </div>
-
-                <div className="min-w-0">
-                  <h3 className="line-clamp-2 font-semibold leading-snug">
-                    {listing.title}
-                  </h3>
-                  <p className="mt-1 line-clamp-3 text-sm text-muted-foreground">
-                    {listing.description || "No description yet."}
-                  </p>
-                </div>
-
-                <div className="space-y-1.5 text-sm text-muted-foreground">
-                  {listing.categoryName && <p>{listing.categoryName}</p>}
-                  <p>
-                    {formatCents(listing.basePrice, { withCents: false })}
-                    <span className="text-xs">
-                      /{pricingUnitLabel(listing.pricingType)}
-                    </span>
-                    {listing.pricingType !== "fixed" && (
-                      <span className="ml-1.5 text-xs">
-                        ({enumLabel(listing.pricingType)})
-                      </span>
-                    )}
-                  </p>
-                </div>
-
-                <div className="mt-auto flex gap-2 pt-2">
-                  <Link href={`/provider/my-services/${listing.id}/edit`} className="flex-1">
-                    <Button variant="outline" size="sm" className="w-full">
-                      <Pencil className="size-3.5" />
-                      Edit
-                    </Button>
-                  </Link>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={isPending}
-                    onClick={() => setDeleting(listing)}
-                    className="border-red-300 text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/30"
-                  >
-                    <Trash2 className="size-3.5" />
-                    Delete
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+    <main className="mx-auto w-full max-w-7xl px-4 pt-6 pb-12 md:px-6 md:pt-8">
+      <Card className="overflow-hidden">
+        <div className="border-b px-5 py-4 sm:px-6">
+          <BackButton className="mb-3 -ml-1" href="/provider/dashboard" />
+          <h1 className="text-xl font-semibold tracking-tight">My services</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Manage what customers can book — you can have up to 5 active.
+          </p>
         </div>
-      )}
+        <div className="p-3 sm:p-4">
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border bg-white px-3 py-2.5 dark:bg-zinc-800/60">
+            <Badge variant="secondary">{items.length} listings</Badge>
+            <Link href="/provider/my-services/new">
+              <Button size="sm">
+                <Plus className="size-4" />
+                New Service
+              </Button>
+            </Link>
+          </div>
+
+          {items.length === 0 ? (
+            <div className="rounded-xl border border-dashed bg-cream py-16 text-center dark:bg-zinc-800/60">
+              <div className="mx-auto flex justify-center">
+                <div className="rounded-full bg-primary/10 p-4">
+                  <BriefcaseBusiness className="size-8 text-primary" />
+                </div>
+              </div>
+              <p className="mt-4 text-lg font-semibold">No services yet</p>
+              <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
+                Create your first service listing so customers can find and book
+                you.
+              </p>
+              <Link
+                href="/provider/my-services/new"
+                className="mt-4 inline-block"
+              >
+                <Button>Create Your First Service</Button>
+              </Link>
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {items.map((listing) => (
+                <Card
+                  key={listing.id}
+                  className="flex flex-col bg-white dark:bg-zinc-800/60"
+                >
+                  <CardContent className="flex flex-1 flex-col gap-3 p-5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <Badge
+                        variant="outline"
+                        className={`capitalize ${STATUS_BADGE[listing.status]}`}
+                      >
+                        {listing.status}
+                      </Badge>
+                    </div>
+
+                    <div className="min-w-0">
+                      <h3 className="line-clamp-2 font-semibold leading-snug">
+                        {listing.title}
+                      </h3>
+                      <p className="mt-1 line-clamp-3 text-sm text-muted-foreground">
+                        {listing.description || "No description yet."}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1.5 text-sm text-muted-foreground">
+                      {listing.categoryName && <p>{listing.categoryName}</p>}
+                      <p>
+                        {formatCents(listing.basePrice, { withCents: false })}
+                        <span className="text-xs">
+                          /{pricingUnitLabel(listing.pricingType)}
+                        </span>
+                        {listing.pricingType !== "fixed" && (
+                          <span className="ml-1.5 text-xs">
+                            ({enumLabel(listing.pricingType)})
+                          </span>
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="mt-auto flex gap-2 pt-2">
+                      <Link
+                        href={`/provider/my-services/${listing.id}/edit`}
+                        className="flex-1"
+                      >
+                        <Button variant="outline" size="sm" className="w-full">
+                          <Pencil className="size-3.5" />
+                          Edit
+                        </Button>
+                      </Link>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={isPending}
+                        onClick={() => setDeleting(listing)}
+                        className="border-red-300 text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/30"
+                      >
+                        <Trash2 className="size-3.5" />
+                        Delete
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      </Card>
 
       {/* Delete confirmation */}
       <Dialog

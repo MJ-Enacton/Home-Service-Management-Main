@@ -24,7 +24,15 @@ const providerLinks = [
 export function Footer() {
   const pathname = usePathname();
 
-  if (pathname === "/sign-in" || pathname === "/sign-up") {
+  if (
+    pathname === "/sign-in" ||
+    pathname === "/sign-up" ||
+    pathname === "/verify-email" ||
+    pathname === "/forgot-password" ||
+    pathname === "/reset-password" ||
+    pathname === "/admin" ||
+    pathname?.startsWith("/admin/")
+  ) {
     return null;
   }
 

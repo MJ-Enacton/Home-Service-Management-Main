@@ -42,6 +42,8 @@ export interface ServiceListingCard {
   ratingCount: number;
   /** whether this listing has an image (or its category has a fallback image) */
   hasImage: boolean;
+  /** Cloudinary public_id of the cover image (first gallery image), if migrated */
+  coverImagePublicId: string | null;
 }
 
 /** Detail-page payload */

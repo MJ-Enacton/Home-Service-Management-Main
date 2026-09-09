@@ -24,11 +24,15 @@ import {
 } from "@/components/ui/select";
 import { signUpSchema } from "@/lib/validators";
 import { authClient } from "@/lib/auth-client";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import SocialSignInButton from "../components/SocialSignInButton";
+import { getSafeNext } from "@/lib/auth-redirect";
 
 export default function SignUpPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const safeNext = getSafeNext(searchParams.get("next"));
+  const signInHref = safeNext ? `/sign-in?next=${encodeURIComponent(safeNext)}` : "/sign-in";
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [role, setRole] = useState<"customer" | "provider">("customer");
   const [isLoading, setIsLoading] = useState(false);
@@ -72,8 +76,11 @@ export default function SignUpPage() {
     }
 
     if (data) {
-      if (role === "provider") router.push("/provider/dashboard");
-      else router.push("/");
+      // Email verification OTP is auto-sent on sign-up (sendVerificationOnSignUp).
+      const params = new URLSearchParams({ email: email! });
+      if (role === "provider") params.set("role", "provider");
+      if (safeNext) params.set("next", safeNext);
+      router.push(`/verify-email?${params.toString()}`);
     }
   };
 
@@ -156,12 +163,12 @@ export default function SignUpPage() {
           </div>
         </div>
 
-        <SocialSignInButton />
+        <SocialSignInButton callbackURL={safeNext ? `/onboarding?next=${encodeURIComponent(safeNext)}` : "/onboarding"} />
       </CardContent>
       <CardFooter className="justify-center rounded-b-2xl border-t bg-zinc-50/50 py-4 dark:border-zinc-800 dark:bg-zinc-900/50">
         <p className="text-sm text-muted-foreground">
           Already have an account?{" "}
-          <Link href="/sign-in" className="font-medium text-zinc-900 hover:underline dark:text-white">
+          <Link href={signInHref} className="font-medium text-zinc-900 hover:underline dark:text-white">
             Sign in
           </Link>
         </p>

@@ -1,8 +1,11 @@
 import { betterAuth } from "better-auth";
+import { emailOTP } from "better-auth/plugins";
 import { config } from "dotenv";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { db } from "./db/db";
 import * as schema from "./db/schema";
+import { sendMail } from "./email/send";
+import { otpTemplate, resetLinkTemplate } from "./email/templates";
 config();
 
 export const auth = betterAuth({
@@ -29,6 +32,13 @@ export const auth = betterAuth({
   },
   emailAndPassword: {
     enabled: true,
+    // Users must verify their email (OTP) before they can sign in.
+    requireEmailVerification: true,
+    // Forgot-password reset link (Phase 3). Better Auth builds `url`.
+    async sendResetPassword({ user, url }) {
+      // Fire-and-forget: don't block the request, avoid timing attacks.
+      void sendMail({ to: user.email, ...resetLinkTemplate(url) });
+    },
   },
   socialProviders: {
     google: {
@@ -36,4 +46,29 @@ export const auth = betterAuth({
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
     },
   },
+  plugins: [
+    emailOTP({
+      otpLength: 6,
+      // OTP valid for 5 minutes, 3 attempts before invalidation.
+      expiresIn: 300,
+      allowedAttempts: 3,
+      // Auto-send the verification OTP right after email/password sign-up.
+      sendVerificationOnSignUp: true,
+      // Use OTP instead of the default verification link everywhere.
+      overrideDefaultEmailVerification: true,
+      async sendVerificationOTP({ email, otp, type }) {
+        // Only email-verification OTPs are used in this app
+        // (sign-in and forget-password go through other flows).
+        if (type !== "email-verification") return;
+        // Always visible in the Next.js server terminal ([0] under
+        // `concurrently`), even when SMTP fails for dummy addresses.
+        // Keep the OTP on its own line so it survives noisy dev output.
+        console.log(
+          `\n[auth] verification code for ${email}: ${otp} (expires in 5 min)\n`,
+        );
+        // Fire-and-forget per Better Auth docs (avoid timing attacks).
+        void sendMail({ to: email, ...otpTemplate(otp) }, otp);
+      },
+    }),
+  ],
 });

@@ -25,11 +25,11 @@ export function AuthBrandPanel() {
       {/* subtle texture — not purple wash */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(255,255,255,0.08),transparent_55%)]"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,color-mix(in_oklab,white_8%,transparent),transparent_55%)]"
       />
       <div
         aria-hidden
-        className="pointer-events-none absolute -right-20 top-[18%] size-[420px] rounded-full bg-blue-500/10 blur-[70px]"
+        className="pointer-events-none absolute -right-20 top-[18%] size-105 rounded-full bg-blue-500/10 blur-[70px]"
       />
 
       <div className="relative p-10">
@@ -37,7 +37,9 @@ export function AuthBrandPanel() {
           <span className="flex size-8 items-center justify-center rounded-lg bg-white text-zinc-900">
             <Wrench className="size-4" />
           </span>
-          <span className="text-[15px] font-semibold tracking-tight">HandyHub</span>
+          <span className="text-[15px] font-semibold tracking-tight">
+            HandyHub
+          </span>
         </Link>
       </div>
 
@@ -45,10 +47,13 @@ export function AuthBrandPanel() {
         <h2 className="max-w-sm text-[28px] font-bold leading-[0.95] tracking-tight text-white">
           Your home&apos;s
           <br />
-          <span className="font-[var(--font-display)] italic font-bold">to-do list, handled.</span>
+          <span className="font(--font-display) italic font-bold">
+            to-do list, handled.
+          </span>
         </h2>
         <p className="mt-3 max-w-sm text-sm leading-relaxed text-zinc-400">
-          Trusted local pros for plumbing, electrical, cleaning and more — upfront prices, real reviews.
+          Trusted local pros for plumbing, electrical, cleaning and more —
+          upfront prices, real reviews.
         </p>
 
         <ul className="mt-8 space-y-4">
@@ -58,14 +63,20 @@ export function AuthBrandPanel() {
                 <highlight.icon className="size-3.5 text-white" />
               </span>
               <div>
-                <p className="text-sm font-medium text-white">{highlight.title}</p>
-                <p className="text-sm leading-relaxed text-zinc-400">{highlight.description}</p>
+                <p className="text-sm font-medium text-white">
+                  {highlight.title}
+                </p>
+                <p className="text-sm leading-relaxed text-zinc-400">
+                  {highlight.description}
+                </p>
               </div>
             </li>
           ))}
         </ul>
 
-        <p className="mt-10 text-xs text-zinc-500">© {new Date().getFullYear()} HandyHub · 24/7 support</p>
+        <p className="mt-10 text-xs text-zinc-500">
+          © {new Date().getFullYear()} HandyHub · 24/7 support
+        </p>
       </div>
     </aside>
   );

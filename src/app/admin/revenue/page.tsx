@@ -99,20 +99,20 @@ export default async function AdminRevenuePage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl">
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">Revenue</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Payments collected through the platform.
-        </p>
-      </div>
+      <Card className="overflow-hidden">
+        <div className="border-b px-5 py-4 sm:px-6">
+          <h1 className="text-2xl font-semibold tracking-tight">Revenue</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Payments collected through the platform.</p>
+        </div>
+        <div className="p-3 sm:p-4">
 
       <div className="grid gap-4 sm:grid-cols-3">
         {summaryCards.map((card) => (
-          <Card key={card.label}>
+          <Card key={card.label} className="bg-cream dark:bg-zinc-800/60">
             <CardContent className="p-5">
               <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-blue-50 p-2.5 dark:bg-blue-950/50">
-                  <card.icon className="size-5 text-blue-600 dark:text-blue-400" />
+                <div className="rounded-lg bg-primary/10 p-2.5">
+                  <card.icon className="size-5 text-primary" />
                 </div>
                 <div className="min-w-0">
                   <p className="truncate text-xs text-muted-foreground">
@@ -133,17 +133,15 @@ export default async function AdminRevenuePage() {
           Last months
         </h2>
         {monthly.length === 0 ? (
-          <Card>
-            <CardContent className="py-8 text-center text-sm text-muted-foreground">
-              No paid transactions yet.
-            </CardContent>
-          </Card>
+          <div className="rounded-xl border border-dashed bg-cream py-8 text-center text-sm text-muted-foreground dark:bg-zinc-800/60">
+            No paid transactions yet.
+          </div>
         ) : (
           <div className="space-y-2">
             {monthly.map((row) => (
               <div
                 key={row.monthKey}
-                className="flex items-center gap-4 rounded-xl border bg-card px-4 py-3"
+                className="flex items-center gap-4 rounded-xl border bg-cream px-4 py-3 dark:bg-zinc-800/60"
               >
                 <span className="w-24 shrink-0 text-sm font-medium">
                   {row.month}
@@ -171,14 +169,12 @@ export default async function AdminRevenuePage() {
           Recent transactions
         </h2>
         {recentPayments.length === 0 ? (
-          <Card>
-            <CardContent className="py-8 text-center text-sm text-muted-foreground">
-              Transactions will appear here once customers start booking.
-            </CardContent>
-          </Card>
+          <div className="rounded-xl border border-dashed bg-cream py-8 text-center text-sm text-muted-foreground dark:bg-zinc-800/60">
+            Transactions will appear here once customers start booking.
+          </div>
         ) : (
-          <Card>
-            <CardContent className="divide-y p-0">
+          <Card className="overflow-hidden">
+            <CardContent className="divide-y bg-cream p-0 dark:bg-zinc-800/60">
               {recentPayments.map((payment) => (
                 <div
                   key={payment.id}
@@ -209,6 +205,8 @@ export default async function AdminRevenuePage() {
           </Card>
         )}
       </section>
+        </div>
+      </Card>
     </div>
   );
 }

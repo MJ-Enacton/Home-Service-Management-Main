@@ -28,10 +28,26 @@ import {
   browseStateToQuery,
   type BrowseState,
 } from "@/lib/browse-params";
+import { ListingCardSkeleton } from "@/components/skeletons";
 
 export type SortKey = "recommended" | "price-asc" | "price-desc" | "rating";
 
 const PRICE_CEILING = 500;
+
+/** Below sm, list view is disabled — grid card is the only layout. */
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 639px)");
+    const update = () => setIsMobile(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+
+  return isMobile;
+}
 
 interface AllServicesClientProps {
   categories: CategoryOption[];
@@ -53,6 +69,8 @@ export function AllServicesClient({ categories }: AllServicesClientProps) {
   } | null>(null);
   const [fetching, setFetching] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const isMobile = useIsMobile();
+  const effectiveView = isMobile ? "grid" : view;
 
   const isInternalNavigationRef = useRef(false);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -94,7 +112,9 @@ export function AllServicesClient({ categories }: AllServicesClientProps) {
   const queryString = browseStateToQuery(state).toString();
   const fetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const listingsCacheRef = useRef<Map<string, { items: ServiceListingCard[]; total: number; ts: number }>>(new Map());
+  const listingsCacheRef = useRef<
+    Map<string, { items: ServiceListingCard[]; total: number; ts: number }>
+  >(new Map());
   const LISTINGS_CACHE_TTL = 60_000;
 
   // Debounced fetch effect: runs whenever the query string changes.
@@ -127,7 +147,10 @@ export function AllServicesClient({ categories }: AllServicesClientProps) {
         })
         .then((data) => {
           const next = { items: data.items ?? [], total: data.total ?? 0 };
-          listingsCacheRef.current.set(queryString, { ...next, ts: Date.now() });
+          listingsCacheRef.current.set(queryString, {
+            ...next,
+            ts: Date.now(),
+          });
           setResults(next);
           setFetchError(null);
         })
@@ -244,105 +267,113 @@ export function AllServicesClient({ categories }: AllServicesClientProps) {
   const hasMoreCategories = categories.length > 6;
 
   const filterPanel = (
-    <div className="space-y-6">
-      {/* Categories */}
-      <div>
-        <h3 className="text-sm font-semibold">Categories</h3>
-        <ul className="mt-3 space-y-2.5">
-          {visibleCategories.map((category) => (
-            <li key={category.id}>
-              <label className="flex cursor-pointer items-center gap-2.5 text-sm">
-                <Checkbox
-                  checked={state.cats.includes(category.slug)}
-                  onCheckedChange={() => toggleCategory(category.slug)}
-                />
-                {category.name}
-              </label>
-            </li>
-          ))}
-        </ul>
-        {hasMoreCategories && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mt-2.5 w-full justify-start gap-1.5 px-0"
-            onClick={() => setShowAllCategories((prev) => !prev)}
-          >
-            {showAllCategories
-              ? "Show fewer categories"
-              : `Show all ${categories.length} categories`}
-            <ChevronRight className="size-3.5" />
-          </Button>
-        )}
-      </div>
+    <div className="rounded-xl border bg-white p-5 dark:bg-zinc-900 dark:border-zinc-800">
+      <div className="space-y-6">
+        {/* Categories */}
+        <div>
+          <h3 className="text-sm font-semibold">Categories</h3>
+          <ul className="mt-3 space-y-2.5">
+            {visibleCategories.map((category) => (
+              <li key={category.id}>
+                <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+                  <Checkbox
+                    checked={state.cats.includes(category.slug)}
+                    onCheckedChange={() => toggleCategory(category.slug)}
+                  />
+                  {category.name}
+                </label>
+              </li>
+            ))}
+          </ul>
+          {hasMoreCategories && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="mt-2.5 w-full justify-start gap-1.5 px-0"
+              onClick={() => setShowAllCategories((prev) => !prev)}
+            >
+              {showAllCategories
+                ? "Show fewer categories"
+                : `Show all ${categories.length} categories`}
+              <ChevronRight className="size-3.5" />
+            </Button>
+          )}
+        </div>
 
-      <div className="border-t" />
+        <div className="border-t dark:border-zinc-800" />
 
-      {/* Price range */}
-      <div>
-        <h3 className="text-sm font-semibold">Price Range</h3>
-        <p className="mt-1 text-xs text-muted-foreground">
-          ${priceDraft[0]} — ${priceDraft[1]} {priceDraft[0] === 0 && priceDraft[1] === PRICE_CEILING ? "(any)" : ""}
-        </p>
-        <div className="mt-4 px-1">
-          <Slider
-            value={priceDraft}
-            min={0}
-            max={PRICE_CEILING}
-            step={10}
-            onValueChange={handleSliderChange}
-            aria-label="Price range"
-          />
-          <div className="mt-1 flex justify-between text-[10px] leading-none text-muted-foreground">
-            <span>$0</span>
-            <span>${PRICE_CEILING}</span>
+        {/* Price range */}
+        <div>
+          <h3 className="text-sm font-semibold">Price Range</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            ${priceDraft[0]} — ${priceDraft[1]}{" "}
+            {priceDraft[0] === 0 && priceDraft[1] === PRICE_CEILING
+              ? "(any)"
+              : ""}
+          </p>
+          <div className="mt-4 px-1">
+            <Slider
+              value={priceDraft}
+              min={0}
+              max={PRICE_CEILING}
+              step={10}
+              onValueChange={handleSliderChange}
+              aria-label="Price range"
+            />
+            <div className="mt-1 flex justify-between text-[10px] leading-none text-muted-foreground">
+              <span>$0</span>
+              <span>${PRICE_CEILING}</span>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="border-t" />
+        <div className="border-t dark:border-zinc-800" />
 
-      {/* Minimum rating */}
-      <div>
-        <h3 className="text-sm font-semibold">Minimum Rating</h3>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {[1, 2, 3, 4, 5].map((rating) => (
-            <button
-              key={rating}
-              type="button"
-              onClick={() =>
-                updateParams({
-                  rating: state.minRating === rating ? null : String(rating),
-                })
-              }
-              className={`flex h-11 w-12 flex-col items-center justify-center gap-0.5 rounded-lg border text-xs transition-colors ${
-                state.minRating === rating
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "hover:border-primary/50"
-              }`}
-            >
-              <Star
-                className={`size-3.5 ${
-                  state.minRating === rating ? "fill-primary text-primary" : ""
+        {/* Minimum rating */}
+        <div>
+          <h3 className="text-sm font-semibold">Minimum Rating</h3>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {[1, 2, 3, 4, 5].map((rating) => (
+              <button
+                key={rating}
+                type="button"
+                onClick={() =>
+                  updateParams({
+                    rating: state.minRating === rating ? null : String(rating),
+                  })
+                }
+                className={`flex h-11 w-12 flex-col items-center justify-center gap-0.5 rounded-lg border text-xs transition-colors ${
+                  state.minRating === rating
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border bg-white hover:border-primary/50 dark:bg-zinc-900 dark:border-zinc-700"
                 }`}
-              />
-              {rating}+
-            </button>
-          ))}
+              >
+                <Star
+                  className={`size-3.5 ${
+                    state.minRating === rating ? "fill-primary text-primary" : ""
+                  }`}
+                />
+                {rating}+
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {hasActiveFilters && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full"
-          onClick={clearFilters}
-        >
-          <X className="size-3.5" />
-          Clear all filters
-        </Button>
-      )}
+        {hasActiveFilters && (
+          <>
+            <div className="border-t dark:border-zinc-800" />
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={clearFilters}
+            >
+              <X className="size-3.5" />
+              Clear all filters
+            </Button>
+          </>
+        )}
+      </div>
     </div>
   );
 
@@ -354,7 +385,7 @@ export function AllServicesClient({ categories }: AllServicesClientProps) {
   return (
     <main className="mx-auto w-full max-w-7xl px-4 md:px-6">
       {/* Page header — light, typographic */}
-      <section className="border-b bg-white dark:bg-zinc-900 dark:border-zinc-800">
+      <section className="border-b">
         <div className="mx-auto w-full max-w-7xl px-4 py-6 md:px-6 md:py-8">
           <p className="text-xs text-muted-foreground">
             <Link href="/" className="hover:text-foreground">
@@ -365,9 +396,12 @@ export function AllServicesClient({ categories }: AllServicesClientProps) {
           </p>
           <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Find help for your home</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">
+                Find help for your home
+              </h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                <span className="font-medium text-foreground">{total}</span> services · vetted pros, upfront pricing
+                <span className="font-medium text-foreground">{total}</span>{" "}
+                services · vetted pros, upfront pricing
               </p>
             </div>
             <form
@@ -411,9 +445,7 @@ export function AllServicesClient({ categories }: AllServicesClientProps) {
         </Button>
       </div>
       {filtersOpen && (
-        <div className="mt-4 rounded-xl border bg-card p-5 lg:hidden">
-          {filterPanel}
-        </div>
+        <div className="mt-4 lg:hidden">{filterPanel}</div>
       )}
 
       <div className="flex gap-8 pt-6 pb-16">
@@ -442,7 +474,10 @@ export function AllServicesClient({ categories }: AllServicesClientProps) {
               </select>
             </label>
 
-            <div className="flex items-center gap-1">
+            <div
+              className="hidden items-center gap-1 sm:flex"
+              aria-label="Change layout"
+            >
               <Button
                 variant={view === "grid" ? "secondary" : "ghost"}
                 size="icon-sm"
@@ -473,11 +508,8 @@ export function AllServicesClient({ categories }: AllServicesClientProps) {
 
           {showSkeleton ? (
             <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-              {Array.from({ length: 9 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="h-72 animate-pulse rounded-xl border bg-card"
-                />
+              {Array.from({ length: PAGE_SIZE }).map((_, i) => (
+                <ListingCardSkeleton key={i} />
               ))}
             </div>
           ) : listings.length === 0 ? (
@@ -491,7 +523,7 @@ export function AllServicesClient({ categories }: AllServicesClientProps) {
                 Clear all filters
               </Button>
             </div>
-          ) : view === "grid" ? (
+          ) : effectiveView === "grid" ? (
             <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
               {listings.map((listing) => (
                 <ListingCard key={listing.id} listing={listing} />

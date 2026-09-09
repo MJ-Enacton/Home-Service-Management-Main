@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { hasPassword } from "@/lib/auth/passwordConfigured";
 import { ChangePasswordDialog } from "@/components/profile/change-password-dialog";
 import { SharedProfileHeader } from "@/components/profile/SharedProfileHeader";
+import { SignOutCard } from "@/components/auth/SignOutDialog";
 import { BackButton } from "@/components/BackButton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -17,7 +18,7 @@ export default async function CustomerProfilePage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-6 md:px-6">
-      <BackButton className="mb-3" />
+      <BackButton className="mb-3" href="/services" />
       <div className="mb-6">
         <h1 className="text-xl font-semibold tracking-tight">Profile</h1>
         <p className="mt-1 text-sm text-muted-foreground">Personal info and address.</p>
@@ -69,6 +70,10 @@ export default async function CustomerProfilePage() {
             </Card>
           )}
         </div>
+      </div>
+
+      <div className="mt-6">
+        <SignOutCard />
       </div>
     </main>
   );

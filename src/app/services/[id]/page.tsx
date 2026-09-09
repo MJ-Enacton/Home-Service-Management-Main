@@ -29,9 +29,10 @@ export default async function ServiceDetailPage({
     <ServiceDetailClient
       listing={detail.card}
       tiers={detail.tiers}
-      imageCount={detail.images.length}
+      images={detail.images}
       providerBio={detail.providerBio}
       reviews={detail.reviews}
+      ratingBreakdown={detail.ratingBreakdown}
       viewerAddress={session?.user.address ?? null}
       viewerUser={session?.user ?? null}
       isOwner={isOwner}

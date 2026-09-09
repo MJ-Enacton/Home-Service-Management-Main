@@ -3,9 +3,13 @@
 import * as React from "react";
 import Link from "next/link";
 import { Popover } from "@base-ui/react";
-import { Bell } from "lucide-react";
+import { Bell, Check, CheckCheck } from "lucide-react";
 import { getSocket } from "@/lib/socket/client";
 import { useSession } from "@/lib/auth-client";
+import {
+  markAllNotificationsRead,
+  markNotificationRead,
+} from "@/app/notifications/actions";
 
 interface RecentNotification {
   id: string;
@@ -30,7 +34,12 @@ function timeAgo(iso: string) {
 export function NotificationBell() {
   const { data: session } = useSession();
   const role = session?.user?.role;
-  const notificationsHref = role === "provider" ? "/provider/notifications" : role === "customer" ? "/customer/notifications" : "/customer/notifications";
+  const notificationsHref =
+    role === "provider"
+      ? "/provider/notifications"
+      : role === "customer"
+        ? "/customer/notifications"
+        : "/customer/notifications";
   const [open, setOpen] = React.useState(false);
   const [unreadCount, setUnreadCount] = React.useState(0);
   const [items, setItems] = React.useState<RecentNotification[]>([]);
@@ -86,15 +95,42 @@ export function NotificationBell() {
     }
   };
 
+  function handleMarkRead(id: string) {
+    // Optimistic: flip locally, badge follows via socket pushUnreadCount.
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === id && !item.readAt
+          ? { ...item, readAt: new Date().toISOString() }
+          : item,
+      ),
+    );
+    setUnreadCount((count) => Math.max(0, count - 1));
+    void markNotificationRead(id).then((result) => {
+      if (!result.success) void fetchNotifications();
+    });
+  }
+
+  function handleMarkAllRead() {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.readAt ? item : { ...item, readAt: new Date().toISOString() },
+      ),
+    );
+    setUnreadCount(0);
+    void markAllNotificationsRead().then((result) => {
+      if (!result.success) void fetchNotifications();
+    });
+  }
+
   return (
     <Popover.Root open={open} onOpenChange={handleOpenChange}>
       <Popover.Trigger
-        className="relative flex items-center gap-1 text-zinc-600 hover:text-blue-600 dark:text-zinc-300 transition-colors outline-none"
+        className="relative flex items-center gap-1 text-zinc-600 hover:text-primary dark:text-zinc-300 transition-colors outline-none"
         aria-label="Notifications"
       >
         <Bell className="size-4" />
         {unreadCount > 0 && (
-          <span className="absolute -top-2 -right-4 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white">
+          <span className="absolute -top-2 -right-4 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-white">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}
@@ -110,8 +146,18 @@ export function NotificationBell() {
             className="w-80 origin-(--transform-origin) rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95"
             aria-label="Recent notifications"
           >
-            <div className="border-b border-border px-4 py-2.5 text-sm font-semibold">
-              Notifications
+            <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5">
+              <span className="text-sm font-semibold">Notifications</span>
+              {unreadCount > 0 && (
+                <button
+                  type="button"
+                  onClick={handleMarkAllRead}
+                  className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
+                >
+                  <CheckCheck className="size-3.5" />
+                  Mark all read
+                </button>
+              )}
             </div>
             {items.length === 0 ? (
               <div className="px-4 py-6 text-center text-sm text-zinc-500 dark:text-zinc-400">
@@ -120,11 +166,14 @@ export function NotificationBell() {
             ) : (
               <ul className="max-h-72 overflow-y-auto p-1">
                 {items.map((item) => (
-                  <li key={item.id}>
+                  <li
+                    key={item.id}
+                    className="group flex items-start gap-1 rounded-md transition-colors hover:bg-accent"
+                  >
                     <Link
                       href={notificationsHref}
                       onClick={() => setOpen(false)}
-                      className="flex flex-col gap-0.5 rounded-md px-3 py-2 transition-colors hover:bg-accent hover:text-accent-foreground"
+                      className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-md px-3 py-2 hover:text-accent-foreground"
                     >
                       <span
                         className={
@@ -139,6 +188,17 @@ export function NotificationBell() {
                         {timeAgo(item.createdAt)}
                       </span>
                     </Link>
+                    {!item.readAt && (
+                      <button
+                        type="button"
+                        title="Mark as read"
+                        aria-label="Mark notification as read"
+                        onClick={() => handleMarkRead(item.id)}
+                        className="mt-1.5 shrink-0 rounded-md p-1.5 text-zinc-400 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-primary/10 hover:text-primary focus-visible:opacity-100"
+                      >
+                        <Check className="size-4" />
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -147,7 +207,7 @@ export function NotificationBell() {
               <Link
                 href={notificationsHref}
                 onClick={() => setOpen(false)}
-                className="block rounded-md px-3 py-2 text-center text-sm font-medium text-blue-600 transition-colors hover:bg-blue-50 hover:text-blue-700 dark:text-blue-400 dark:hover:bg-blue-950/50"
+                className="block rounded-md px-3 py-2 text-center text-sm font-medium text-primary transition-colors hover:bg-primary/10 dark:hover:bg-primary/15"
               >
                 Show all Notifications
               </Link>

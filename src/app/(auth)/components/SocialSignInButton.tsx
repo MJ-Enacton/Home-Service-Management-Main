@@ -4,14 +4,14 @@ import { Button } from "@/components/ui/button";
 import { signIn } from "@/lib/auth-client";
 import { useState } from "react";
 
-export default function SocialSignInButton() {
+export default function SocialSignInButton({ callbackURL = "/onboarding" }: { callbackURL?: string }) {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSignIn = async () => {
     setIsLoading(true);
     await signIn.social({
       provider: "google",
-      callbackURL: "/onboarding",
+      callbackURL,
     });
     setIsLoading(false);
   };

@@ -3,7 +3,11 @@ import type { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { resolveRole } from "@/lib/roles";
 
-const CUSTOMER_ROUTES = ["/services", "/customer"];
+// /services (listing + detail) is browsable by every authenticated role —
+// the navbar, mobile drawer and detail page already link providers there.
+// Booking itself stays guarded: the detail page shows an "own listing"
+// notice for owners and bookService rejects self-booking server-side.
+const CUSTOMER_ROUTES = ["/customer"];
 const PROVIDER_ROUTES = ["/provider"];
 const ADMIN_ROUTES = ["/admin"];
 
@@ -50,6 +54,18 @@ export async function proxy(req: NextRequest) {
   }
 
   const role = resolveRole(session.user.role);
+
+  // Email/password users must verify via OTP before using the app.
+  // (Google OAuth emails are pre-verified and skip this.)
+  const emailVerified =
+    (session.user as { emailVerified?: boolean | null }).emailVerified ??
+    true;
+  if (!emailVerified) {
+    const params = new URLSearchParams({ email: session.user.email });
+    return NextResponse.redirect(
+      new URL(`/verify-email?${params.toString()}`, req.url),
+    );
+  }
 
   if (matchesRoute(pathname, ADMIN_ROUTES) && role !== "admin") {
     return redirectTo(req, "/");

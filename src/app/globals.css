@@ -49,6 +49,14 @@
   --font-display: var(--font-display);
 }
 
+@theme {
+  /* Brand surface tokens — use bg-cream / bg-glow-blue / bg-glow-yellow
+     (with opacity modifiers, from-/via- etc.) instead of hardcoded hex. */
+  --color-cream: #fcfcf9;
+  --color-glow-blue: #e6efff;
+  --color-glow-yellow: #fff6cc;
+}
+
 :root {
   --background: oklch(0.985 0.005 85);
   --foreground: oklch(0.18 0.01 260);

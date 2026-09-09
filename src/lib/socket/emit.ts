@@ -1,7 +1,14 @@
-const SOCKET_INTERNAL_URL = process.env.SOCKET_INTERNAL_URL || "http://localhost:5000";
-const INTERNAL_SECRET = process.env.SOCKET_INTERNAL_SECRET || "dev-secret-change-in-production";
+const SOCKET_INTERNAL_URL =
+  process.env.SOCKET_INTERNAL_URL || "http://localhost:5000";
+const INTERNAL_SECRET =
+  process.env.SOCKET_INTERNAL_SECRET || "dev-secret-change-in-production";
 
-async function internalEmit(payload: { event: string; payload: unknown; userId?: string; userIds?: string[] }) {
+async function internalEmit(payload: {
+  event: string;
+  payload: unknown;
+  userId?: string;
+  userIds?: string[];
+}) {
   try {
     const response = await fetch(`${SOCKET_INTERNAL_URL}/internal/emit`, {
       method: "POST",
@@ -15,7 +22,9 @@ async function internalEmit(payload: { event: string; payload: unknown; userId?:
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: "Unknown error" }));
+      const error = await response
+        .json()
+        .catch(() => ({ error: "Unknown error" }));
       console.error("[socket] Failed to emit:", error);
     }
   } catch (error) {

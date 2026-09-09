@@ -1,16 +1,42 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, usePathname } from "next/navigation";
-import { useSession, authClient } from "@/lib/auth-client";
+import { usePathname } from "next/navigation";
+import { motion } from "framer-motion";
+import { useSession } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/NotificationBell";
 import { MobileSidebar } from "@/components/MobileSidebar";
-import { Wrench, LogOut } from "lucide-react";
+import { Wrench } from "lucide-react";
+
+function NavPill({
+  href,
+  active,
+  children,
+}: {
+  href: string;
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`relative rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${active ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+    >
+      {active && (
+        <motion.span
+          layoutId="navbar-active-pill"
+          className="absolute inset-0 rounded-full bg-white shadow-sm dark:bg-zinc-700"
+          transition={{ type: "spring", bounce: 0.1, duration: 0.7, delay: 0.3 }}
+        />
+      )}
+      <span className="relative z-10">{children}</span>
+    </Link>
+  );
+}
 
 export function Navbar() {
   const { data: session, isPending } = useSession();
-  const router = useRouter();
   const pathname = usePathname();
 
   if (
@@ -20,11 +46,6 @@ export function Navbar() {
   ) {
     return null;
   }
-
-  const handleSignOut = async () => {
-    await authClient.signOut();
-    router.push("/");
-  };
 
   const navLinkClass =
     "text-[13px] font-medium tracking-tight text-muted-foreground transition-colors hover:text-foreground";
@@ -55,43 +76,54 @@ export function Navbar() {
         <div className="hidden flex-1 items-center justify-center lg:flex">
           {!isPending && session?.user && (
             <div className="flex items-center gap-1 rounded-full border bg-zinc-50 p-1 dark:bg-zinc-800 dark:border-zinc-700">
-              <Link
-                href="/services"
-                className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${isActive("/services") ? "bg-white shadow-sm text-foreground dark:bg-zinc-700" : "text-muted-foreground hover:text-foreground"}`}
-              >
+              {session.user.role === "customer" && (
+                <NavPill href="/" active={isActive("/")}>
+                  Home
+                </NavPill>
+              )}
+              <NavPill href="/services" active={isActive("/services")}>
                 Explore
-              </Link>
+              </NavPill>
               {session.user.role === "provider" && (
-                <Link
+                <NavPill
                   href="/provider/dashboard"
-                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${isActive("/provider") ? "bg-white shadow-sm text-foreground dark:bg-zinc-700" : "text-muted-foreground hover:text-foreground"}`}
+                  active={isActive("/provider/dashboard")}
                 >
                   Dashboard
-                </Link>
+                </NavPill>
               )}
               {session.user.role !== "admin" && (
-                <Link
-                  href={session.user.role === "provider" ? "/provider/my-bookings" : "/customer/my-bookings"}
-                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${isActive(session.user.role === "provider" ? "/provider/my-bookings" : "/customer/my-bookings") || isActive("/my-bookings") ? "bg-white shadow-sm text-foreground dark:bg-zinc-700" : "text-muted-foreground hover:text-foreground"}`}
+                <NavPill
+                  href={
+                    session.user.role === "provider"
+                      ? "/provider/my-bookings"
+                      : "/customer/my-bookings"
+                  }
+                  active={
+                    isActive(
+                      session.user.role === "provider"
+                        ? "/provider/my-bookings"
+                        : "/customer/my-bookings",
+                    ) || isActive("/my-bookings")
+                  }
                 >
                   Bookings
-                </Link>
+                </NavPill>
               )}
               {session.user.role === "provider" && (
-                <Link
+                <NavPill
                   href="/provider/my-services"
-                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${isActive("/provider/my-services") || isActive("/my-services") ? "bg-white shadow-sm text-foreground dark:bg-zinc-700" : "text-muted-foreground hover:text-foreground"}`}
+                  active={
+                    isActive("/provider/my-services") || isActive("/my-services")
+                  }
                 >
                   Services
-                </Link>
+                </NavPill>
               )}
               {session.user.role === "admin" && (
-                <Link
-                  href="/admin"
-                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${isActive("/admin") ? "bg-white shadow-sm text-foreground dark:bg-zinc-700" : "text-muted-foreground hover:text-foreground"}`}
-                >
+                <NavPill href="/admin" active={isActive("/admin")}>
                   Admin
-                </Link>
+                </NavPill>
               )}
             </div>
           )}
@@ -130,7 +162,13 @@ export function Navbar() {
               </div>
               <NotificationBell />
               <Link
-                href={session.user.role === "provider" ? "/provider/profile" : session.user.role === "admin" ? "/profile" : "/customer/profile"}
+                href={
+                  session.user.role === "provider"
+                    ? "/provider/profile"
+                    : session.user.role === "admin"
+                      ? "/profile"
+                      : "/customer/profile"
+                }
                 className="hidden items-center gap-2 rounded-full border bg-white py-1 pl-1 pr-3 text-xs font-medium transition-colors hover:bg-zinc-50 dark:bg-zinc-800 dark:border-zinc-700 sm:flex"
                 aria-label="Profile"
               >
@@ -139,15 +177,6 @@ export function Navbar() {
                 </span>
                 <span className="max-w-24 truncate">{session.user.name}</span>
               </Link>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleSignOut}
-                aria-label="Sign out"
-                className="size-8 rounded-full text-muted-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              >
-                <LogOut className="size-3.5" />
-              </Button>
               <MobileSidebar
                 role={session.user.role}
                 name={session.user.name}

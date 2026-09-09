@@ -13,7 +13,7 @@ export function AboutUs() {
     >
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(37,99,235,0.06),transparent_55%)] dark:bg-[radial-gradient(ellipse_at_top,rgba(37,99,235,0.12),transparent_55%)]"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,color-mix(in_oklab,var(--primary)_6%,transparent),transparent_55%)] dark:bg-[radial-gradient(ellipse_at_top,color-mix(in_oklab,var(--primary)_12%,transparent),transparent_55%)]"
       />
 
       <div className="relative mx-auto grid w-full max-w-7xl gap-8 px-4 py-12 md:grid-cols-[1.05fr_0.95fr] md:items-center md:px-6 md:py-16">

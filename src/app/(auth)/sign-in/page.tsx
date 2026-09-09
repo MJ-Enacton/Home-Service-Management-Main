@@ -17,13 +17,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { signInSchema } from "@/lib/validators";
 import { authClient } from "@/lib/auth-client";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import SocialSignInButton from "../components/SocialSignInButton";
+import { getSafeNext } from "@/lib/auth-redirect";
 
 export default function SignInPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const safeNext = getSafeNext(searchParams.get("next"));
+  const signUpHref = safeNext ? `/sign-up?next=${encodeURIComponent(safeNext)}` : "/sign-up";
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -51,6 +55,19 @@ export default function SignInPage() {
     setIsLoading(false);
 
     if (error) {
+      // Unverified accounts must complete the OTP step first.
+      if (
+        error.status === 403 ||
+        /verif/i.test(error.message ?? "")
+      ) {
+        const params = new URLSearchParams({ email: email! });
+        if (safeNext) params.set("next", safeNext);
+        // The verify-email page auto-sends a fresh code on mount — don't
+        // pre-send here, or the user gets two codes and only the latest
+        // is valid.
+        router.push(`/verify-email?${params.toString()}`);
+        return;
+      }
       setErrors({ email: error.message! });
       return;
     }
@@ -58,7 +75,7 @@ export default function SignInPage() {
     if (data?.user) {
       const userRole = (data.user as { role?: string }).role || "customer";
       if (userRole === "provider") router.push("/provider/dashboard");
-      else router.push("/");
+      else router.push(safeNext ?? "/");
     }
   };
 
@@ -98,7 +115,7 @@ export default function SignInPage() {
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <Label htmlFor="password" className="text-xs font-medium">Password</Label>
-              <Link href="#" className="text-xs text-muted-foreground hover:text-foreground">Forgot?</Link>
+              <Link href="/forgot-password" className="text-xs text-muted-foreground hover:text-foreground">Forgot?</Link>
             </div>
             <Input
               id="password"
@@ -132,12 +149,12 @@ export default function SignInPage() {
           </div>
         </div>
 
-        <SocialSignInButton />
+        <SocialSignInButton callbackURL={safeNext ? `/onboarding?next=${encodeURIComponent(safeNext)}` : "/onboarding"} />
       </CardContent>
       <CardFooter className="justify-center rounded-b-2xl border-t bg-zinc-50/50 py-4 dark:border-zinc-800 dark:bg-zinc-900/50">
         <p className="text-sm text-muted-foreground">
           Don&apos;t have an account?{" "}
-          <Link href="/sign-up" className="font-medium text-zinc-900 hover:underline dark:text-white">
+          <Link href={signUpHref} className="font-medium text-zinc-900 hover:underline dark:text-white">
             Create account
           </Link>
         </p>

@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { authClient, useSession } from "@/lib/auth-client";
-import { useRouter } from "next/navigation";
+import { sendWelcomeEmailForCurrentUser } from "@/lib/email/welcome";
+import { useRouter, useSearchParams } from "next/navigation";
+import { getSafeNext } from "@/lib/auth-redirect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,6 +25,8 @@ import {
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const safeNext = getSafeNext(searchParams.get("next"));
   const { data: session, isPending } = useSession();
   const [contact, setContact] = useState("");
   const [address, setAddress] = useState("");
@@ -31,11 +35,14 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     if (!isPending && !session?.user) {
-      router.push("/sign-in");
+      router.push(
+        safeNext ? `/sign-in?next=${encodeURIComponent(safeNext)}` : "/sign-in",
+      );
     } else if (session?.user?.contact && session?.user?.address) {
-      router.push("/");
+      if (session.user.role === "provider") router.push("/provider/dashboard");
+      else router.push(safeNext ?? "/");
     }
-  }, [session, isPending, router]);
+  }, [session, isPending, router, safeNext]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,10 +65,13 @@ export default function OnboardingPage() {
       return;
     }
 
+    // Role-based welcome email for OAuth signups (best-effort).
+    void sendWelcomeEmailForCurrentUser().catch(() => undefined);
+
     if (role === "provider") {
       router.push("/provider/dashboard");
     } else {
-      router.push("/");
+      router.push(safeNext ?? "/");
     }
   };
 

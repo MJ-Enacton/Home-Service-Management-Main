@@ -7,5 +7,7 @@ export default async function NotificationsLegacyPage() {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user) redirect("/sign-in");
   const role = resolveRole(session.user.role);
-  redirect(role === "provider" ? "/provider/notifications" : "/customer/notifications");
+  redirect(
+    role === "provider" ? "/provider/notifications" : "/customer/notifications",
+  );
 }

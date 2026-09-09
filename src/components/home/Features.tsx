@@ -24,7 +24,7 @@ const features = [
 
 export function Features() {
   return (
-    <section className="bg-zinc-50 py-12 dark:bg-zinc-900 md:py-16">
+    <section className="bg-white py-12 dark:bg-zinc-950 md:py-16">
       <div className="mx-auto w-full max-w-6xl px-4 md:px-6">
         <Reveal>
           <div className="flex flex-wrap items-end justify-between gap-4">

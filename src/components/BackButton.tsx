@@ -11,12 +11,15 @@ interface BackButtonProps {
   className?: string;
   /** visual style for light or dark backgrounds */
   variant?: "default" | "on-dark";
+  /** explicit parent route — when set, navigates here instead of history.back() */
+  href?: string;
 }
 
 export function BackButton({
   label = "Back",
   className,
   variant = "default",
+  href,
 }: BackButtonProps) {
   const router = useRouter();
 
@@ -24,7 +27,13 @@ export function BackButton({
     <Button
       variant="ghost"
       size="sm"
-      onClick={() => router.back()}
+      onClick={() => {
+        if (href) {
+          router.push(href);
+        } else {
+          router.back();
+        }
+      }}
       className={cn(
         variant === "on-dark"
           ? "-ml-2 text-white/90 hover:bg-white/15 hover:text-white"

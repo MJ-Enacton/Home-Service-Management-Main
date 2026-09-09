@@ -2,26 +2,28 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Wrench,
   Users,
   HardHat,
   Wallet,
+  ClipboardList,
   Menu,
   X,
   Home,
   LogOut,
 } from "lucide-react";
-import { authClient } from "@/lib/auth-client";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { SignOutDialog } from "@/components/auth/SignOutDialog";
 
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/services", label: "Services", icon: Wrench },
+  { href: "/admin/bookings", label: "Bookings", icon: ClipboardList },
   { href: "/admin/customers", label: "Customers", icon: Users },
   { href: "/admin/providers", label: "Providers", icon: HardHat },
   { href: "/admin/revenue", label: "Revenue", icon: Wallet },
@@ -46,7 +48,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
             className={cn(
               "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
               active
-                ? "bg-blue-600 text-white shadow-sm shadow-blue-500/20"
+                ? "bg-primary text-primary-foreground shadow-sm shadow-primary/20"
                 : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white",
             )}
           >
@@ -70,12 +72,6 @@ interface AdminShellProps {
 
 export function AdminShell({ children, user }: AdminShellProps) {
   const [mobileOpen, setMobileOpen] = React.useState(false);
-  const router = useRouter();
-
-  async function handleSignOut() {
-    await authClient.signOut();
-    router.push("/");
-  }
 
   return (
     <div className="flex min-h-screen w-full">
@@ -85,10 +81,10 @@ export function AdminShell({ children, user }: AdminShellProps) {
           href="/"
           className="flex items-center gap-2 border-b px-4 py-4 dark:border-zinc-800"
         >
-          <div className="rounded-lg bg-blue-600 p-1.5">
+          <div className="rounded-lg bg-primary p-1.5">
             <Home className="size-5 text-white" />
           </div>
-          <span className="bg-linear-to-r bg-clip-text text-xl font-bold tracking-tight text-transparent from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">
+          <span className="bg-linear-to-r bg-clip-text text-xl font-bold tracking-tight text-transparent from-primary to-primary/60">
             HomeService
           </span>
         </Link>
@@ -105,15 +101,18 @@ export function AdminShell({ children, user }: AdminShellProps) {
                 {user.role}
               </p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full justify-start border-red-200 text-red-600 transition-colors hover:bg-red-50 hover:text-red-700 dark:border-red-900/50 dark:hover:bg-red-950/30"
-              onClick={handleSignOut}
-            >
-              <LogOut className="size-4" />
-              Sign Out
-            </Button>
+            <SignOutDialog
+              trigger={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-start border-red-200 text-red-600 transition-colors hover:bg-red-50 hover:text-red-700 dark:border-red-900/50 dark:hover:bg-red-950/30"
+                >
+                  <LogOut className="size-4" />
+                  Sign Out
+                </Button>
+              }
+            />
           </div>
         </div>
       </aside>
@@ -121,7 +120,7 @@ export function AdminShell({ children, user }: AdminShellProps) {
       {/* Mobile top bar */}
       <div className="fixed inset-x-0 top-0 z-40 flex h-14 items-center justify-between border-b bg-white/95 px-4 backdrop-blur dark:border-zinc-800 dark:bg-black/95 md:hidden">
         <Link href="/" className="flex items-center gap-2">
-          <div className="rounded-lg bg-blue-600 p-1.5">
+          <div className="rounded-lg bg-primary p-1.5">
             <Home className="size-4 text-white" />
           </div>
           <span className="text-lg font-bold tracking-tight">HomeService</span>
@@ -156,15 +155,19 @@ export function AdminShell({ children, user }: AdminShellProps) {
                   {user.role}
                 </p>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full justify-start border-red-200 text-red-600 transition-colors hover:bg-red-50 hover:text-red-700 dark:border-red-900/50 dark:hover:bg-red-950/30"
-                onClick={handleSignOut}
-              >
-                <LogOut className="size-4" />
-                Sign Out
-              </Button>
+              <SignOutDialog
+                onSignedOut={() => setMobileOpen(false)}
+                trigger={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-start border-red-200 text-red-600 transition-colors hover:bg-red-50 hover:text-red-700 dark:border-red-900/50 dark:hover:bg-red-950/30"
+                  >
+                    <LogOut className="size-4" />
+                    Sign Out
+                  </Button>
+                }
+              />
             </div>
           </div>
         </div>

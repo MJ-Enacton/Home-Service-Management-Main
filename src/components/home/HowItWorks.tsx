@@ -24,7 +24,7 @@ const steps = [
 
 export function HowItWorks() {
   return (
-    <section className="bg-white py-12 dark:bg-zinc-950 md:py-16">
+    <section className="bg-zinc-50 py-12 dark:bg-zinc-900 md:py-16">
       <div className="mx-auto w-full max-w-6xl px-4 md:px-6">
         <Reveal>
           <div className="mx-auto max-w-2xl text-center">
@@ -68,7 +68,7 @@ export function HowItWorks() {
 
         <Reveal delay={320}>
           <div className="mt-8 flex justify-center">
-            <p className="inline-flex items-center gap-2 rounded-full border bg-zinc-50 px-3 py-1.5 text-xs text-muted-foreground dark:bg-zinc-900 dark:border-zinc-800">
+            <p className="inline-flex items-center gap-2 rounded-full border bg-white px-3 py-1.5 text-xs text-muted-foreground dark:bg-zinc-900 dark:border-zinc-800">
               Avg. booking time: <span className="font-semibold text-foreground">under 2 minutes</span>
               <ArrowRight className="size-3" />
             </p>
