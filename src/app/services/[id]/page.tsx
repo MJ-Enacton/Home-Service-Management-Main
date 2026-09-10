@@ -34,6 +34,8 @@ export default async function ServiceDetailPage({
       reviews={detail.reviews}
       ratingBreakdown={detail.ratingBreakdown}
       viewerAddress={session?.user.address ?? null}
+      viewerLatitude={session?.user.latitude ?? null}
+      viewerLongitude={session?.user.longitude ?? null}
       viewerUser={session?.user ?? null}
       isOwner={isOwner}
       isAuthenticated={Boolean(session?.user)}

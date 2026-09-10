@@ -12,8 +12,8 @@ import {
   CreditCard,
   Loader2,
   MapPin,
+  Smartphone,
   Star,
-  Wallet,
 } from "lucide-react";
 
 import type { ServiceListingCard, TierOption } from "@/types/service";
@@ -31,7 +31,14 @@ import {
 } from "@/lib/format";
 import { computePriceBreakdown } from "@/lib/pricing";
 import { getBookingWindow, isDateWithinBookingWindow } from "@/lib/booking-window";
-import { bookService, getScheduleOptions } from "./actions";
+import {
+  bookService,
+  getScheduleOptions,
+  retryBookingPayment,
+  verifyBookingPayment,
+} from "./actions";
+import { openRazorpayCheckout } from "@/lib/razorpay-checkout";
+import dynamic from "next/dynamic";
 import { CldImage } from "next-cloudinary";
 import { BackButton } from "@/components/BackButton";
 import { Card, CardContent } from "@/components/ui/card";
@@ -49,6 +56,8 @@ interface ServiceDetailClientProps {
   reviews: ListingReviewSummary[];
   ratingBreakdown: RatingBreakdownRow[];
   viewerAddress: string | null;
+  viewerLatitude?: number | null;
+  viewerLongitude?: number | null;
   viewerUser: {
     id: string;
     name: string;
@@ -60,17 +69,25 @@ interface ServiceDetailClientProps {
   isAuthenticated: boolean;
 }
 
-type PaymentMethod = "card" | "cod";
+type PaymentMethod = "card" | "upi";
 
 const STEPS = ["Job Details", "Schedule", "Payment"] as const;
 
 const EMPTY_DETAILS = {
   streetAddress: "",
+  latitude: null as number | null,
+  longitude: null as number | null,
+  addressSource: "custom" as "saved" | "custom",
   jobNotes: "",
   contactFullName: "",
   contactEmail: "",
   contactPhone: "",
 };
+
+const MapLocationPicker = dynamic(
+  () => import("@/components/MapLocationPicker").then((m) => m.MapLocationPicker),
+  { ssr: false, loading: () => <p className="text-sm text-muted-foreground">Loading map…</p> },
+);
 
 /** Single gallery photo (Cloudinary-only; renders nothing without a publicId). */
 function GalleryImage({
@@ -117,14 +134,20 @@ export function ServiceDetailClient({
   reviews,
   ratingBreakdown,
   viewerAddress,
+  viewerLatitude,
+  viewerLongitude,
   viewerUser,
   isOwner,
   isAuthenticated,
 }: ServiceDetailClientProps) {
   const [step, setStep] = useState(1);
+  const hasSavedAddress = Boolean(viewerAddress?.trim());
+  const [addressMode, setAddressMode] = useState<"saved" | "custom">(
+    hasSavedAddress ? "saved" : "custom",
+  );
   const [details, setDetails] = useState({
     ...EMPTY_DETAILS,
-    streetAddress: viewerAddress ?? "",
+    streetAddress: "",
     contactFullName: viewerUser?.name ?? "",
     contactEmail: viewerUser?.email ?? "",
     contactPhone: viewerUser?.contact ?? "",
@@ -137,14 +160,14 @@ export function ServiceDetailClient({
   const [isContactless, setIsContactless] = useState(false);
   const [isUrgent, setIsUrgent] = useState(false);
   const [method, setMethod] = useState<PaymentMethod>("card");
-  const [cardName, setCardName] = useState("");
-  const [cardNumber, setCardNumber] = useState("");
-  const [cardExpiry, setCardExpiry] = useState("");
-  const [cardCvc, setCardCvc] = useState("");
   const [authorizing, setAuthorizing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [bookingNumber, setBookingNumber] = useState("");
+  const [pendingPayment, setPendingPayment] = useState<{
+    bookingId: string;
+    bookingNumber: string;
+  } | null>(null);
 
   const selectedTier = tiers.find((tier) => tier.id === tierId) ?? null;
   const baseCents = selectedTier
@@ -197,8 +220,14 @@ export function ServiceDetailClient({
   function goNext() {
     setError("");
     if (step === 1) {
-      if (!details.streetAddress.trim()) {
-        setError("Street address is required.");
+      const activeAddress =
+        addressMode === "saved" ? (viewerAddress ?? "") : details.streetAddress;
+      if (!activeAddress.trim()) {
+        setError(
+          addressMode === "saved"
+            ? "No saved address found — pick a location on the map instead."
+            : "Please drop a pin on the map to set the service location.",
+        );
         return;
       }
       if (!details.contactEmail?.trim() || !details.contactPhone?.trim()) {
@@ -217,70 +246,69 @@ export function ServiceDetailClient({
     setStep((prev) => Math.min(3, prev + 1));
   }
 
-  /** Mock-gateway card validation (Luhn + expiry). */
-  function validateCard(): string | null {
-    const digits = cardNumber.replace(/\D/g, "");
-    if (!cardName.trim()) return "Cardholder name is required.";
-    if (digits.length < 13 || digits.length > 19) {
-      return "Enter a valid card number.";
-    }
-    let sum = 0;
-    let double = false;
-    for (let i = digits.length - 1; i >= 0; i--) {
-      let value = Number(digits[i]);
-      if (double) {
-        value *= 2;
-        if (value > 9) value -= 9;
-      }
-      sum += value;
-      double = !double;
-    }
-    if (sum % 10 !== 0) return "This card number is not valid.";
-
-    const expiryMatch = /^(0[1-9]|1[0-2])\s*\/\s*(\d{2})$/.exec(cardExpiry);
-    if (!expiryMatch) return "Use MM/YY for the expiry date.";
-    const month = Number(expiryMatch[1]);
-    const year = 2000 + Number(expiryMatch[2]);
-    const endOfMonth = new Date(year, month, 0, 23, 59, 59);
-    if (endOfMonth < new Date()) return "This card has expired.";
-
-    if (!/^\d{3,4}$/.test(cardCvc)) return "Enter a valid CVC.";
-    return null;
-  }
-
-  /** Simulated authorization before creating the booking. */
-  async function handlePay() {
-    setError("");
-    if (method === "card") {
-      const cardError = validateCard();
-      if (cardError) {
-        setError(cardError);
-        return;
-      }
-    }
-
+  /** Open Razorpay Checkout for a server-created order, then verify. */
+  async function payOnline(
+    bookingId: string,
+    bookingNum: string,
+    payment: { orderId: string; amount: number; keyId: string },
+  ) {
     setAuthorizing(true);
     try {
-      // Pretend to talk to the payment gateway.
-      await new Promise((resolve) => setTimeout(resolve, method === "card" ? 1500 : 800));
+      await openRazorpayCheckout({
+        keyId: payment.keyId,
+        orderId: payment.orderId,
+        amount: payment.amount,
+        prefill: {
+          name: details.contactFullName || undefined,
+          email: details.contactEmail || undefined,
+          contact: details.contactPhone || undefined,
+        },
+        onSuccess: async (creds) => {
+          const verified = await verifyBookingPayment({
+            bookingId,
+            ...creds,
+          });
+          if (!verified.success) {
+            setError(verified.error);
+            setPendingPayment({ bookingId, bookingNumber: bookingNum });
+            return;
+          }
+          setPendingPayment(null);
+          setBookingNumber(bookingNum);
+        },
+        onDismiss: () => {
+          // Booking exists with a pending payment — retry from the panel.
+          setPendingPayment({ bookingId, bookingNumber: bookingNum });
+        },
+      });
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Payment failed to start.",
+      );
+      setPendingPayment({ bookingId, bookingNumber: bookingNum });
     } finally {
       setAuthorizing(false);
     }
-
-    await handleConfirm(
-      method === "card"
-        ? { cardLast4: cardNumber.replace(/\D/g, "").slice(-4) }
-        : undefined,
-    );
   }
 
-  async function handleConfirm(payment?: { cardLast4?: string }) {
+  /** Create the booking (+ pending payment + Razorpay order for online). */
+  async function createBooking() {
     setError("");
     setSubmitting(true);
     try {
+      const resolvedDetails =
+        addressMode === "saved"
+          ? {
+              ...details,
+              streetAddress: viewerAddress ?? "",
+              latitude: viewerLatitude ?? null,
+              longitude: viewerLongitude ?? null,
+              addressSource: "saved" as const,
+            }
+          : { ...details, addressSource: "custom" as const };
       const result = await bookService({
         listingId: listing.id,
-        details,
+        details: resolvedDetails,
         schedule: {
           scheduledDate: date,
           scheduledTimeSlot: slotTime,
@@ -289,7 +317,6 @@ export function ServiceDetailClient({
           tierId,
         },
         paymentMethod: method,
-        payment,
       });
       if (!result.success) {
         setError(result.error);
@@ -306,12 +333,89 @@ export function ServiceDetailClient({
               : prev,
           );
         }
-        return;
+        return null;
       }
-      setBookingNumber(result.bookingNumber ?? "");
+      return result;
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function handlePay() {
+    setError("");
+    setPendingPayment(null);
+
+    // Online only (card/UPI): card details are collected securely inside
+    // Razorpay Checkout — create the booking first, then pay.
+    const result = await createBooking();
+    if (!result || !result.bookingId || !result.bookingNumber) return;
+    if (!result.payment) {
+      setError(
+        "Booking created, but payment could not start. Please retry below.",
+      );
+      setPendingPayment({
+        bookingId: result.bookingId,
+        bookingNumber: result.bookingNumber,
+      });
+      return;
+    }
+    await payOnline(result.bookingId, result.bookingNumber, result.payment);
+  }
+
+  /** Pay-now retry from the pending panel (fresh order each attempt). */
+  async function handlePendingPay() {
+    if (!pendingPayment) return;
+    setError("");
+    const retry = await retryBookingPayment(pendingPayment.bookingId);
+    if (!retry.success) {
+      setError(retry.error);
+      return;
+    }
+    if (!retry.payment) {
+      setError("Could not start payment. Please try again.");
+      return;
+    }
+    await payOnline(
+      pendingPayment.bookingId,
+      pendingPayment.bookingNumber,
+      retry.payment,
+    );
+  }
+
+  /* ---------------- Payment pending ---------------- */
+  if (pendingPayment && !bookingNumber) {
+    return (
+      <main className="mx-auto w-full max-w-3xl px-4 pt-6 pb-16 md:px-6 md:pt-8">
+        <Card className="overflow-hidden">
+          <CardContent className="flex flex-col items-center gap-4 py-14 text-center">
+            <div className="rounded-full bg-amber-100 p-4 dark:bg-amber-950/50">
+              <Clock className="size-10 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold">Payment pending</h1>
+              <p className="mt-2 text-muted-foreground">
+                Your booking{" "}
+                <span className="font-semibold text-foreground">
+                  {pendingPayment.bookingNumber}
+                </span>{" "}
+                is created. Complete the payment to confirm your slot.
+              </p>
+            </div>
+            {error ? (
+              <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            ) : null}
+            <div className="mt-2 flex gap-3">
+              <Button onClick={handlePendingPay} disabled={authorizing}>
+                {authorizing ? "Opening payment…" : "Pay now"}
+              </Button>
+              <Link href="/customer/my-bookings">
+                <Button variant="outline">My Bookings</Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      </main>
+    );
   }
 
   /* ---------------- Confirmation ---------------- */
@@ -528,20 +632,80 @@ export function ServiceDetailClient({
                       </p>
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="street">Street address *</Label>
-                      <Input
-                        id="street"
-                        value={details.streetAddress}
-                        onChange={(event) =>
-                          setDetails((prev) => ({
-                            ...prev,
-                            streetAddress: event.target.value,
-                          }))
-                        }
-                        placeholder="221B Baker Street"
-                        className="bg-background"
-                      />
+                    <div className="space-y-3">
+                      <Label>Service location *</Label>
+                      {addressMode === "saved" && hasSavedAddress ? (
+                        <>
+                          <div className="inline-flex rounded-full border bg-zinc-100 p-1 dark:bg-zinc-800">
+                            <Button
+                              type="button"
+                              variant="default"
+                              size="sm"
+                              className="rounded-full"
+                              onClick={() => setAddressMode("saved")}
+                            >
+                              Saved Address
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="rounded-full"
+                              onClick={() => setAddressMode("custom")}
+                            >
+                              Pick a different location
+                            </Button>
+                          </div>
+                          <div className="flex items-start gap-3 rounded-xl border bg-zinc-50 px-4 py-3 dark:bg-zinc-900">
+                            <MapPin className="mt-0.5 size-4 shrink-0 text-primary" />
+                            <div className="min-w-0">
+                              <p className="text-sm leading-6">{viewerAddress}</p>
+                              {viewerLatitude != null && viewerLongitude != null && (
+                                <p className="mt-0.5 text-xs text-muted-foreground">
+                                  Pinned at {viewerLatitude.toFixed(4)},{" "}
+                                  {viewerLongitude.toFixed(4)}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <MapLocationPicker
+                          compact
+                          toolbar={
+                            hasSavedAddress ? (
+                              <div className="inline-flex rounded-full border bg-zinc-100 p-1 dark:bg-zinc-800">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="rounded-full"
+                                  onClick={() => setAddressMode("saved")}
+                                >
+                                  Saved Address
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="default"
+                                  size="sm"
+                                  className="rounded-full"
+                                  onClick={() => setAddressMode("custom")}
+                                >
+                                  Pick a different location
+                                </Button>
+                              </div>
+                            ) : undefined
+                          }
+                          onChange={(loc) =>
+                            setDetails((prev) => ({
+                              ...prev,
+                              streetAddress: loc?.address ?? "",
+                              latitude: loc?.latitude ?? null,
+                              longitude: loc?.longitude ?? null,
+                            }))
+                          }
+                        />
+                      )}
                     </div>
 
                     <div className="grid gap-4 sm:grid-cols-2">
@@ -797,9 +961,9 @@ export function ServiceDetailClient({
                               icon: CreditCard,
                             },
                             {
-                              value: "cod",
-                              label: "Cash on Delivery",
-                              icon: Wallet,
+                              value: "upi",
+                              label: "UPI",
+                              icon: Smartphone,
                             },
                           ] as const
                         ).map((option) => (
@@ -822,78 +986,14 @@ export function ServiceDetailClient({
                       </div>
                     </div>
 
-                    {method === "card" && (
-                      <div className="space-y-3 rounded-xl border bg-muted/40 p-3.5">
-                        <div className="space-y-2">
-                          <Label htmlFor="cardName">Cardholder name</Label>
-                          <Input
-                            id="cardName"
-                            value={cardName}
-                            onChange={(event) => setCardName(event.target.value)}
-                            placeholder="Name on card"
-                            autoComplete="cc-name"
-                            className="bg-background"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="cardNumber">Card number</Label>
-                          <Input
-                            id="cardNumber"
-                            inputMode="numeric"
-                            value={cardNumber}
-                            onChange={(event) =>
-                              setCardNumber(
-                                (event.target.value.replace(/\D/g, "").match(/.{1,4}/g) ?? [])
-                                  .join(" ")
-                                  .slice(0, 19),
-                              )
-                            }
-                            placeholder="4242 4242 4242 4242"
-                            autoComplete="cc-number"
-                            className="bg-background font-mono"
-                          />
-                          <p className="text-[11px] text-muted-foreground">
-                            Demo gateway — use any Luhn-valid test number, e.g.{" "}
-                            <span className="font-mono">4242 4242 4242 4242</span>
-                          </p>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="cardExpiry">Expiry</Label>
-                            <Input
-                              id="cardExpiry"
-                              inputMode="numeric"
-                              value={cardExpiry}
-                              onChange={(event) => {
-                                const digits = event.target.value.replace(/\D/g, "").slice(0, 4);
-                                setCardExpiry(
-                                  digits.length > 2
-                                    ? `${digits.slice(0, 2)}/${digits.slice(2)}`
-                                    : digits,
-                                );
-                              }}
-                              placeholder="MM/YY"
-                              autoComplete="cc-exp"
-                              className="bg-background font-mono"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="cardCvc">CVC</Label>
-                            <Input
-                              id="cardCvc"
-                              inputMode="numeric"
-                              value={cardCvc}
-                              onChange={(event) =>
-                                setCardCvc(event.target.value.replace(/\D/g, "").slice(0, 4))
-                              }
-                              placeholder="123"
-                              autoComplete="cc-csc"
-                              className="bg-background font-mono"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                     )}
+                    <div className="rounded-xl border bg-muted/40 p-3.5">
+                      <p className="text-sm text-muted-foreground">
+                        You&apos;ll enter card/UPI details securely in
+                        Razorpay Checkout after creating the booking. Your
+                        booking reference is generated first, so a failed
+                        payment never loses your slot request.
+                      </p>
+                    </div>
 
                     <div className="flex justify-between">
                       <Button variant="outline" onClick={() => setStep(2)}>

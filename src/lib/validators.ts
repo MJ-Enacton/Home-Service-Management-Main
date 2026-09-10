@@ -18,6 +18,8 @@ export const signUpSchema = z.object({
     .string()
     .min(8, { message: "Password must be at least 8 characters." }),
   address: z.string().min(5, { message: "Please enter a valid address." }),
+  latitude: z.number().min(-90).max(90).nullish(),
+  longitude: z.number().min(-180).max(180).nullish(),
   role: z.enum(["customer", "provider"], {
     message: "Please select a role.",
   }),
@@ -66,6 +68,9 @@ export type TierInput = z.infer<typeof tierSchema>;
 
 export const bookingDetailsSchema = z.object({
   streetAddress: z.string().min(5, "Street address is required.").max(500),
+  latitude: z.number().min(-90).max(90).nullish(),
+  longitude: z.number().min(-180).max(180).nullish(),
+  addressSource: z.enum(["saved", "custom"]).default("custom"),
   jobNotes: z.string().max(2000).optional(),
   contactFullName: z.string().max(120).optional(),
   contactEmail: z.string().min(1, "Email is required.").email("Enter a valid email."),

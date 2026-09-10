@@ -32,6 +32,8 @@ export interface BookingListItem {
   addressLine: string;
   totalAmountCents: number;
   amountPaidCents: number | null;
+  /** true when an online payment is still pending (Pay now retry) */
+  paymentPending?: boolean;
   /** true when the customer already left a review (customer view) */
   reviewed: boolean;
   requestedAt: Date;

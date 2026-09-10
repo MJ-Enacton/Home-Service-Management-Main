@@ -12,6 +12,7 @@ import {
   uuid,
   primaryKey,
   integer,
+  doublePrecision,
   jsonb,
   check,
 } from "drizzle-orm/pg-core";
@@ -60,9 +61,9 @@ export const paymentStatusEnum = pgEnum("payment_status", [
 
 export const paymentMethodEnum = pgEnum("payment_method", [
   "card",
+  "upi",
   "paypal",
   "wallet",
-  "cod",
 ]);
 
 export const notificationTypeEnum = pgEnum("notification_type", [
@@ -103,6 +104,8 @@ export const user = pgTable("user", {
     .notNull(),
   contact: text("contact").unique(),
   address: text("address"),
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
   role: roleEnum("role").default("customer"),
   banned: boolean("banned").default(false).notNull(),
   banReason: text("ban_reason"),
@@ -355,6 +358,9 @@ export const bookings = pgTable(
 
     // Step 1 — Job Details (whole address lives in streetAddress only)
     streetAddress: varchar("street_address", { length: 500 }).notNull(),
+    latitude: doublePrecision("latitude"),
+    longitude: doublePrecision("longitude"),
+    usedSavedAddress: boolean("used_saved_address").default(false).notNull(),
     jobNotes: text("job_notes"),
     contactFirstName: text("contact_first_name"),
     contactLastName: text("contact_last_name"),
@@ -415,9 +421,17 @@ export const payments = pgTable(
       .references(() => bookings.id, { onDelete: "cascade" }),
     method: paymentMethodEnum("method").notNull(),
     status: paymentStatusEnum("status").default("pending").notNull(),
-    amountPaid: integer("amount_paid").notNull(), // in cents
-    providerPayout: integer("provider_payout"), // after platform fee deduction
-    externalId: text("external_id"), // Stripe payment intent ID, etc.
+    amountPaid: integer("amount_paid").notNull(), // in cents (= paise for INR)
+    providerPayout: integer("provider_payout"), // actual Route transfer paise
+    externalId: text("external_id"), // Razorpay payment id (gateway ref)
+    razorpayOrderId: text("razorpay_order_id"),
+    razorpayPaymentId: text("razorpay_payment_id"),
+    transferId: text("transfer_id"), // Route transfer id (trf_...)
+    // pending | created | failed | none (none = held on platform, no Route)
+    transferStatus: text("transfer_status").default("pending"),
+    // Project-mode settlement: admin marks provider shares settled after
+    // paying out off-system (no Route). Null = still owed.
+    payoutSettledAt: timestamp("payout_settled_at"),
     paidAt: timestamp("paid_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },

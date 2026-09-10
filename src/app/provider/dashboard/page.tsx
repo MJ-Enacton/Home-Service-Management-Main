@@ -4,7 +4,13 @@ import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/db";
-import { bookings, listingImages, reviews, serviceListings } from "@/lib/db/schema";
+import {
+  bookings,
+  listingImages,
+  payments,
+  reviews,
+  serviceListings,
+} from "@/lib/db/schema";
 import { user } from "@/lib/db/schema";
 import { parseLocalDate } from "@/lib/format";
 import {
@@ -104,6 +110,22 @@ export default async function ProviderDashboardPage({
     .filter((b) => b.status === "completed")
     .reduce((sum, b) => sum + (b.totalAmount ?? 0), 0);
 
+  // Ledger split: owed provider shares, settled vs still pending.
+  const [payoutRow] = await db
+    .select({
+      settled: sql<number>`coalesce(sum(case when ${payments.payoutSettledAt} is null then 0 else ${payments.providerPayout} end), 0)::int`,
+      pending: sql<number>`coalesce(sum(case when ${payments.payoutSettledAt} is null then ${payments.providerPayout} else 0 end), 0)::int`,
+    })
+    .from(bookings)
+    .innerJoin(payments, eq(payments.bookingId, bookings.id))
+    .where(
+      and(
+        eq(bookings.providerId, providerId),
+        eq(bookings.status, "completed"),
+        eq(payments.status, "paid"),
+      ),
+    );
+
   const jobsCompleted = allBookings.filter(
     (b) => b.status === "completed",
   ).length;
@@ -128,10 +150,16 @@ export default async function ProviderDashboardPage({
   const upcomingBookings = allBookings
     .filter(
       (b) =>
-        (b.status === "requested" || b.status === "confirmed" || b.status === "in_progress") &&
+        (b.status === "requested" ||
+          b.status === "confirmed" ||
+          b.status === "in_progress") &&
         parseLocalDate(b.scheduledDate) >= nowStart,
     )
-    .sort((a, b) => parseLocalDate(a.scheduledDate).getTime() - parseLocalDate(b.scheduledDate).getTime())
+    .sort(
+      (a, b) =>
+        parseLocalDate(a.scheduledDate).getTime() -
+        parseLocalDate(b.scheduledDate).getTime(),
+    )
     .slice(0, 5);
 
   // Batched: listing titles + customer names for upcoming (fixes N+1)
@@ -139,10 +167,16 @@ export default async function ProviderDashboardPage({
   const customerIds = [...new Set(upcomingBookings.map((b) => b.customerId))];
   const [listingMapRows, customerMapRows] = await Promise.all([
     listingIds.length
-      ? db.select({ id: serviceListings.id, title: serviceListings.title }).from(serviceListings).where(inArray(serviceListings.id, listingIds))
+      ? db
+          .select({ id: serviceListings.id, title: serviceListings.title })
+          .from(serviceListings)
+          .where(inArray(serviceListings.id, listingIds))
       : Promise.resolve([] as { id: string; title: string }[]),
     customerIds.length
-      ? db.select({ id: user.id, name: user.name }).from(user).where(inArray(user.id, customerIds))
+      ? db
+          .select({ id: user.id, name: user.name })
+          .from(user)
+          .where(inArray(user.id, customerIds))
       : Promise.resolve([] as { id: string; name: string }[]),
   ]);
   const listingTitleById = new Map(listingMapRows.map((r) => [r.id, r.title]));
@@ -163,7 +197,10 @@ export default async function ProviderDashboardPage({
   const activeIds = activeListings.map((l) => l.id);
   const ratingRows = activeIds.length
     ? await db
-        .select({ listingId: reviews.listingId, avg: sql<number>`avg(${reviews.rating})::float` })
+        .select({
+          listingId: reviews.listingId,
+          avg: sql<number>`avg(${reviews.rating})::float`,
+        })
         .from(reviews)
         .where(inArray(reviews.listingId, activeIds))
         .groupBy(reviews.listingId)
@@ -192,12 +229,23 @@ export default async function ProviderDashboardPage({
     }
   }
   const activeServicesStats = activeListings.map((listing) => {
-    const listingBookings = allBookings.filter((b) => b.listingId === listing.id && b.status !== "cancelled");
-    const revenue = listingBookings.filter((b) => b.status === "completed").reduce((s, b) => s + (b.totalAmount ?? 0), 0);
+    const listingBookings = allBookings.filter(
+      (b) => b.listingId === listing.id && b.status !== "cancelled",
+    );
+    const revenue = listingBookings
+      .filter((b) => b.status === "completed")
+      .reduce((s, b) => s + (b.totalAmount ?? 0), 0);
     const count = listingBookings.length;
     const avgRaw = avgByListingId.get(listing.id);
     const avg = avgRaw ? Math.round(avgRaw * 10) / 10 : 0;
-    return { id: listing.id, title: listing.title, bookings: count, revenueCents: revenue, rating: avg, coverImagePublicId: coverByListingId.get(listing.id) ?? null };
+    return {
+      id: listing.id,
+      title: listing.title,
+      bookings: count,
+      revenueCents: revenue,
+      rating: avg,
+      coverImagePublicId: coverByListingId.get(listing.id) ?? null,
+    };
   });
 
   const newRequestsCount = upcomingBookings.length;
@@ -207,6 +255,8 @@ export default async function ProviderDashboardPage({
       providerName={session.user.name?.split(" ")[0] ?? "there"}
       profileImage={session.user.image ?? null}
       totalRevenueCents={totalRevenueCents}
+      settledPayoutCents={payoutRow?.settled ?? 0}
+      pendingPayoutCents={payoutRow?.pending ?? 0}
       jobsCompleted={jobsCompleted}
       avgRating={avgRating}
       reviewCount={reviewCount}

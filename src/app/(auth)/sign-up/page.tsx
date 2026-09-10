@@ -36,6 +36,45 @@ export default function SignUpPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [role, setRole] = useState<"customer" | "provider">("customer");
   const [isLoading, setIsLoading] = useState(false);
+  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [locating, setLocating] = useState(false);
+
+  const useMyLocation = () => {
+    if (!("geolocation" in navigator)) {
+      setErrors((p) => ({ ...p, address: "Browser location not supported." }));
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const res = await fetch(
+            `/api/geocode/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`,
+          );
+          const json = await res.json();
+          const input = document.getElementById("address") as HTMLInputElement | null;
+          if (res.ok && json.result?.address && input) {
+            input.value = json.result.address;
+          }
+          setCoords({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+          setErrors((p) => {
+            const next = { ...p };
+            delete next.address;
+            return next;
+          });
+        } catch {
+          setCoords({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+        } finally {
+          setLocating(false);
+        }
+      },
+      () => {
+        setLocating(false);
+        setErrors((p) => ({ ...p, address: "Location denied — type your address instead." }));
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+    );
+  };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -48,7 +87,7 @@ export default function SignUpPage() {
     const contact = formData.get("contact")?.toString();
     const address = formData.get("address")?.toString();
 
-    const result = signUpSchema.safeParse({ name, email, password, contact, address, role });
+    const result = signUpSchema.safeParse({ name, email, password, contact, address, latitude: coords?.latitude ?? null, longitude: coords?.longitude ?? null, role });
 
     if (!result.success) {
       const fieldErrors: Record<string, string> = {};
@@ -66,6 +105,8 @@ export default function SignUpPage() {
       name: name!,
       contact: contact!,
       address: address!,
+      latitude: coords?.latitude ?? undefined,
+      longitude: coords?.longitude ?? undefined,
       role,
     });
     setIsLoading(false);
@@ -129,6 +170,9 @@ export default function SignUpPage() {
           <div className="space-y-1.5">
             <Label htmlFor="address" className="text-xs font-medium">Address</Label>
             <Input id="address" name="address" placeholder="123 Main St, City, State" autoComplete="street-address" aria-invalid={Boolean(errors.address)} className="h-9 rounded-xl bg-white" disabled={isLoading} />
+            <button type="button" onClick={useMyLocation} disabled={isLoading || locating} className="text-xs font-medium text-zinc-600 underline-offset-2 hover:underline">
+              {locating ? "Locating…" : coords ? `Location attached (${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)}) — use again to refresh` : "Use my current location"}
+            </button>
             {errors.address && <p role="alert" className="text-xs text-destructive">{errors.address}</p>}
           </div>
 

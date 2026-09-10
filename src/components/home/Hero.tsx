@@ -120,7 +120,7 @@ export function Hero() {
             </span>
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            No haggling · COD
+            No haggling · Secure online payment
           </p>
         </Link>
 

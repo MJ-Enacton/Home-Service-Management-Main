@@ -28,6 +28,8 @@ import { emitToUser } from "@/lib/socket/emit";
 import { pushUnreadCount } from "@/lib/socket/notify";
 import { sendMail } from "@/lib/email/send";
 import { bookingCompletedTemplate } from "@/lib/email/templates";
+import { isSlotStartPassed } from "@/lib/booking-window";
+import { formatBookingSchedule } from "@/lib/format";
 
 async function getSession() {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -87,6 +89,41 @@ export async function respondToBookingRequest(
 export async function startJob(bookingId: string): Promise<ActionResult> {
   const session = await getSession();
 
+  // A job can only be started once its scheduled slot time has arrived.
+  // Without this, tomorrow's job could be started right now. Urgent jobs
+  // have no advance slot, so they stay exempt (same rule as completeJob).
+  const [booking] = await db
+    .select({
+      id: bookings.id,
+      providerId: bookings.providerId,
+      status: bookings.status,
+      scheduledDate: bookings.scheduledDate,
+      scheduledTimeSlot: bookings.scheduledTimeSlot,
+      isUrgent: bookings.isUrgent,
+    })
+    .from(bookings)
+    .where(
+      and(eq(bookings.id, bookingId), eq(bookings.providerId, session.user.id)),
+    );
+  if (!booking) {
+    return { success: false, error: "Booking not found." };
+  }
+  if (booking.status !== "confirmed") {
+    return {
+      success: false,
+      error: "Only confirmed bookings assigned to you can be started.",
+    };
+  }
+  if (
+    !booking.isUrgent &&
+    !isSlotStartPassed(booking.scheduledDate, booking.scheduledTimeSlot)
+  ) {
+    return {
+      success: false,
+      error: `This job is scheduled for ${formatBookingSchedule(booking.scheduledDate, booking.scheduledTimeSlot)}. You can start it at or after the scheduled time.`,
+    };
+  }
+
   const result = await startBooking(
     session.user.id,
     bookingId,
@@ -123,6 +160,43 @@ export async function startJob(bookingId: string): Promise<ActionResult> {
 
 export async function completeJob(bookingId: string): Promise<ActionResult> {
   const session = await getSession();
+
+  // A job can only be completed (and its review email sent) once its
+  // scheduled slot has actually started. Without this, confirm → start →
+  // complete click-through fires the "leave a review" email before any
+  // real work — e.g. seconds after a card payment. Urgent jobs have no
+  // advance slot, so they stay exempt.
+  const [booking] = await db
+    .select({
+      id: bookings.id,
+      providerId: bookings.providerId,
+      status: bookings.status,
+      scheduledDate: bookings.scheduledDate,
+      scheduledTimeSlot: bookings.scheduledTimeSlot,
+      isUrgent: bookings.isUrgent,
+    })
+    .from(bookings)
+    .where(
+      and(eq(bookings.id, bookingId), eq(bookings.providerId, session.user.id)),
+    );
+  if (!booking) {
+    return { success: false, error: "Booking not found." };
+  }
+  if (booking.status !== "in_progress") {
+    return {
+      success: false,
+      error: "Only in-progress jobs assigned to you can be completed.",
+    };
+  }
+  if (
+    !booking.isUrgent &&
+    !isSlotStartPassed(booking.scheduledDate, booking.scheduledTimeSlot)
+  ) {
+    return {
+      success: false,
+      error: `This job is scheduled for ${formatBookingSchedule(booking.scheduledDate, booking.scheduledTimeSlot)}. You can mark it complete after the scheduled time.`,
+    };
+  }
 
   const result = await completeBooking(
     session.user.id,

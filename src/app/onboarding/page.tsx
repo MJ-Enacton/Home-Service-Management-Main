@@ -22,6 +22,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  MapLocationPicker,
+  type PickedLocation,
+} from "@/components/MapLocationPicker";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -29,7 +33,7 @@ export default function OnboardingPage() {
   const safeNext = getSafeNext(searchParams.get("next"));
   const { data: session, isPending } = useSession();
   const [contact, setContact] = useState("");
-  const [address, setAddress] = useState("");
+  const [location, setLocation] = useState<PickedLocation | null>(null);
   const [role, setRole] = useState<"customer" | "provider">("customer");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -46,15 +50,21 @@ export default function OnboardingPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!contact || !address) {
-      alert("Please fill in all fields.");
+    if (!contact.trim()) {
+      alert("Please enter your contact number.");
+      return;
+    }
+    if (!location) {
+      alert("Please pick your address on the map (or search above).");
       return;
     }
 
     setIsLoading(true);
     const { error } = await authClient.updateUser({
-      contact,
-      address,
+      contact: contact.trim(),
+      address: location.address,
+      latitude: location.latitude,
+      longitude: location.longitude,
       role,
     });
 
@@ -79,13 +89,13 @@ export default function OnboardingPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
-      <Card className="w-full max-w-md border-none shadow-xl">
+      <Card className="w-full max-w-lg border-none shadow-xl">
         <CardHeader>
           <CardTitle className="text-2xl font-bold tracking-tight">
             Complete your profile
           </CardTitle>
           <CardDescription className="text-zinc-500 dark:text-zinc-400">
-            Please provide your contact details to continue
+            Add your contact and pick your address on the map
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -96,19 +106,13 @@ export default function OnboardingPage() {
                 id="contact"
                 value={contact}
                 onChange={(e) => setContact(e.target.value)}
-                placeholder="+1 (555) 000-0000"
+                placeholder="+91 98765 43210"
                 required
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="address">Address</Label>
-              <Input
-                id="address"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="123 Main St, City, State"
-                required
-              />
+              <Label>Home address (map picker)</Label>
+              <MapLocationPicker onChange={setLocation} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="role">Role</Label>
@@ -122,7 +126,7 @@ export default function OnboardingPage() {
                 </SelectContent>
               </Select>
             </div>
-            <Button type="submit" className="w-full" disabled={isLoading}>
+            <Button type="submit" className="w-full" disabled={isLoading || !location}>
               {isLoading ? "Saving..." : "Complete Profile"}
             </Button>
           </form>

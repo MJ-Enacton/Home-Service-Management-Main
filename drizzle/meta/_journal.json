@@ -57,6 +57,34 @@
       "when": 1788939782603,
       "tag": "0007_equal_arclight",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789020699342,
+      "tag": "0008_add-location-coords",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789030889734,
+      "tag": "0009_acoustic_obadiah_stane",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789034397668,
+      "tag": "0010_exotic_cardiac",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1789035479650,
+      "tag": "0011_wooden_stellaris",
+      "breakpoints": true
     }
   ]
 }

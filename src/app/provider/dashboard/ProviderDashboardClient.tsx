@@ -51,6 +51,8 @@ export default function ProviderDashboardClient({
   providerName,
   profileImage,
   totalRevenueCents,
+  settledPayoutCents,
+  pendingPayoutCents,
   jobsCompleted,
   avgRating,
   reviewCount,
@@ -66,6 +68,8 @@ export default function ProviderDashboardClient({
   providerName: string;
   profileImage: string | null;
   totalRevenueCents: number;
+  settledPayoutCents: number;
+  pendingPayoutCents: number;
   jobsCompleted: number;
   avgRating: number;
   reviewCount: number;
@@ -165,6 +169,10 @@ export default function ProviderDashboardClient({
               <p className="mt-1 text-xs text-muted-foreground">
                 {jobsCompleted} job{jobsCompleted === 1 ? "" : "s"} completed ·{" "}
                 {reviewCount} review{reviewCount === 1 ? "" : "s"}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {formatCents(settledPayoutCents)} settled ·{" "}
+                {formatCents(pendingPayoutCents)} pending payout
               </p>
             </CardContent>
           </Card>

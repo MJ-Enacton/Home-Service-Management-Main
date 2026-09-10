@@ -40,3 +40,39 @@ export function getBookingWindow(now: Date = new Date()): { min: string; max: st
   maxDate.setDate(minDate.getDate() + MAX_BOOKING_DAYS_AHEAD);
   return { min: toLocalDateKey(minDate), max: toLocalDateKey(maxDate) };
 }
+
+const SLOT_24H_RE = /^(\d{1,2}):(\d{2})$/;
+const SLOT_12H_RE = /^(\d{1,2}):(\d{2})\s*([AP])\.?\s*M\.?$/i;
+
+/**
+ * True once the scheduled slot's start time has passed (server local time).
+ * Slots are stored 24h "HH:MM"; very old rows may hold "HH:MM AM/PM".
+ * Unparseable input fails OPEN (returns true) so legacy rows stay completable.
+ */
+export function isSlotStartPassed(
+  scheduledDate: string,
+  scheduledTimeSlot: string,
+  now: Date = new Date(),
+): boolean {
+  if (!DATE_RE.test(scheduledDate)) return true;
+  const slot = scheduledTimeSlot.trim();
+  const m24 = SLOT_24H_RE.exec(slot);
+  const m12 = SLOT_12H_RE.exec(slot);
+  let hours: number;
+  let minutes: number;
+  if (m24) {
+    hours = Number(m24[1]);
+    minutes = Number(m24[2]);
+  } else if (m12) {
+    hours = Number(m12[1]) % 12;
+    if (m12[3]?.toUpperCase() === "P") hours += 12;
+    minutes = Number(m12[2]);
+  } else {
+    return true;
+  }
+  if (hours > 23 || minutes > 59) return true;
+  const [y, mo, d] = scheduledDate.split("-").map(Number);
+  const slotStart = new Date(y, mo - 1, d, hours, minutes);
+  if (Number.isNaN(slotStart.getTime())) return true;
+  return now.getTime() >= slotStart.getTime();
+}

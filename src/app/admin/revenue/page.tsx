@@ -1,11 +1,13 @@
 import { desc, eq, sql } from "drizzle-orm";
 import { Wallet, TrendingUp, ReceiptText } from "lucide-react";
+import { alias } from "drizzle-orm/pg-core";
 
 import { db } from "@/lib/db/db";
 import { bookings, payments, serviceListings, user } from "@/lib/db/schema";
 import { formatCents } from "@/lib/format";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { SettleButton } from "./SettleButton";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +20,10 @@ interface RecentPayment {
   bookingNumber: string;
   listingTitle: string;
   customerName: string;
+  providerName: string;
   serviceFeeCents: number;
+  providerPayoutCents: number | null;
+  payoutSettledAt: Date | null;
 }
 
 export default async function AdminRevenuePage() {
@@ -51,6 +56,7 @@ export default async function AdminRevenuePage() {
     .orderBy(desc(sql`date_trunc('month', ${payments.paidAt})`))
     .limit(6);
 
+  const providerUser = alias(user, "provider_user");
   const recentPayments: RecentPayment[] = await db
     .select({
       id: payments.id,
@@ -61,12 +67,16 @@ export default async function AdminRevenuePage() {
       bookingNumber: bookings.bookingNumber,
       listingTitle: serviceListings.title,
       customerName: user.name,
+      providerName: providerUser.name,
       serviceFeeCents: bookings.serviceFee,
+      providerPayoutCents: payments.providerPayout,
+      payoutSettledAt: payments.payoutSettledAt,
     })
     .from(payments)
     .innerJoin(bookings, eq(payments.bookingId, bookings.id))
     .innerJoin(serviceListings, eq(bookings.listingId, serviceListings.id))
     .innerJoin(user, eq(bookings.customerId, user.id))
+    .innerJoin(providerUser, eq(bookings.providerId, providerUser.id))
     .orderBy(desc(payments.createdAt))
     .limit(15);
 
@@ -190,6 +200,22 @@ export default async function AdminRevenuePage() {
                           })
                         : "pending capture"}
                     </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Provider {payment.providerName}:{" "}
+                      {payment.providerPayoutCents !== null
+                        ? formatCents(payment.providerPayoutCents)
+                        : "—"}{" "}
+                      ·{" "}
+                      {payment.payoutSettledAt ? (
+                        <span className="font-medium text-green-700 dark:text-green-400">
+                          settled
+                        </span>
+                      ) : (
+                        <span className="font-medium text-amber-700 dark:text-amber-400">
+                          owed
+                        </span>
+                      )}
+                    </p>
                   </div>
                   <div className="flex items-center gap-3">
                     <Badge variant="secondary" className="capitalize">
@@ -198,6 +224,11 @@ export default async function AdminRevenuePage() {
                     <span className="font-semibold">
                       {formatCents(payment.amountPaidCents)}
                     </span>
+                    {payment.status === "paid" &&
+                    payment.providerPayoutCents !== null &&
+                    !payment.payoutSettledAt ? (
+                      <SettleButton paymentId={payment.id} />
+                    ) : null}
                   </div>
                 </div>
               ))}

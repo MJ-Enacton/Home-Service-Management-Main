@@ -1,8 +1,9 @@
 "use server";
 
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/db";
@@ -15,7 +16,7 @@ import {
   serviceTiers,
   user,
 } from "@/lib/db/schema";
-import type { ActionResult } from "@/types";
+import type { ActionResult, Payment } from "@/types";
 import {
   bookingDetailsSchema,
   bookingScheduleSchema,
@@ -23,7 +24,9 @@ import {
 import {
   computePriceBreakdown,
   generateBookingNumber,
+  providerShare,
 } from "@/lib/pricing";
+import { createRazorpayOrder, fetchRazorpayPayment, razorpayKeyId, razorpayKeySecret, verifyPaymentSignature } from "@/lib/razorpay";
 import { generateSlots } from "@/lib/availability";
 import { isDateWithinBookingWindow } from "@/lib/booking-window";
 import type { Slot } from "@/lib/availability";
@@ -69,12 +72,21 @@ export interface BookServiceInput {
   listingId: string;
   details: unknown;
   schedule: unknown;
-  paymentMethod: "card" | "cod";
-  /** Mock-gateway artifacts recorded on the payment row. */
-  payment?: {
-    cardLast4?: string;
-  } | null;
+  paymentMethod: "card" | "upi";
 }
+
+export interface BookingPaymentOrder {
+  orderId: string;
+  amount: number;
+  keyId: string;
+}
+
+export type BookServiceResult = ActionResult & {
+  bookingNumber?: string;
+  bookingId?: string;
+  /** Present for online methods when the Razorpay order was created. */
+  payment?: BookingPaymentOrder | null;
+};
 
 /** Slots for the schedule step: availability windows minus existing bookings. */
 export async function getScheduleOptions(
@@ -151,20 +163,23 @@ export async function getScheduleOptions(
   return { success: true, slots };
 }
 
-/** Mock gateway reference, e.g. "mock_card_4242_9f3a71c02b5d". */
-function buildMockExternalId(
-  method: "card" | "cod",
-  cardLast4?: string,
-): string {
-  const token = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
-  return method === "card" && cardLast4
-    ? `mock_card_${cardLast4}_${token}`
-    : `mock_${method}_${token}`;
+/**
+ * Project-mode split (no Route): the provider's 85% is recorded as owed
+ * in providerPayout and settled off-system; transferStatus stays 'none'.
+ */
+function providerSplit(totalPaise: number): {
+  providerPayout: number;
+  transferStatus: "none";
+} {
+  return {
+    providerPayout: providerShare(totalPaise),
+    transferStatus: "none",
+  };
 }
 
 export async function bookService(
   input: BookServiceInput,
-): Promise<ActionResult & { bookingNumber?: string }> {
+): Promise<BookServiceResult> {
   const session = await auth.api.getSession({ headers: await headers() });
 
   if (!session?.user) {
@@ -179,6 +194,25 @@ export async function bookService(
     };
   }
 
+  // Resolve the service location. "saved" never trusts client coords —
+  // re-read the default from the DB so a tampered request can't spoof it.
+  let streetAddress = details.data.streetAddress;
+  let latitude: number | null = details.data.latitude ?? null;
+  let longitude: number | null = details.data.longitude ?? null;
+  const usedSavedAddress = details.data.addressSource === "saved";
+  if (usedSavedAddress) {
+    const [me] = await db
+      .select({ address: user.address, latitude: user.latitude, longitude: user.longitude })
+      .from(user)
+      .where(eq(user.id, session.user.id));
+    if (!me?.address?.trim()) {
+      return { success: false, error: "No saved address found — pick a location instead." };
+    }
+    streetAddress = me.address;
+    latitude = me.latitude ?? null;
+    longitude = me.longitude ?? null;
+  }
+
   const schedule = bookingScheduleSchema.safeParse(input.schedule);
   if (!schedule.success) {
     return {
@@ -189,7 +223,7 @@ export async function bookService(
     };
   }
 
-  if (!["card", "cod"].includes(input.paymentMethod)) {
+  if (!["card", "upi"].includes(input.paymentMethod)) {
     return { success: false, error: "Select a payment method." };
   }
 
@@ -268,10 +302,16 @@ export async function bookService(
 
   const pricing = computePriceBreakdown(baseCents);
   const notificationId = crypto.randomUUID();
+  // Owed share recorded even before capture.
+  const split = providerSplit(pricing.totalCents);
 
   try {
     let bookingId: string | undefined;
     let bookingNumber: string | undefined;
+    // True when we resumed the customer's own in-flight booking instead
+    // of inserting (double-click / retry race): no new rows, no duplicate
+    // notification — just proceed to order creation for the owned row.
+    let resumed = false;
 
     // Booking + payment + provider notification commit atomically: a
     // failure in any of them rolls back the whole unit, so a booking
@@ -285,7 +325,11 @@ export async function bookService(
           // read above ran before this write, so without this guard two
           // concurrent requests could book the same slot.
           const [conflict] = await tx
-            .select({ id: bookings.id })
+            .select({
+              id: bookings.id,
+              customerId: bookings.customerId,
+              bookingNumber: bookings.bookingNumber,
+            })
             .from(bookings)
             .where(
               and(
@@ -297,10 +341,31 @@ export async function bookService(
             )
             .limit(1);
           if (conflict) {
+            // Own pending booking (double-click / parallel retry): resume
+            // it for payment instead of erroring. Anything else owns the
+            // slot — and only the row owner ever reaches Checkout.
+            if (conflict.customerId === session.user.id) {
+              const [ownPending] = await tx
+                .select({ id: payments.id })
+                .from(payments)
+                .where(
+                  and(
+                    eq(payments.bookingId, conflict.id),
+                    eq(payments.status, "pending"),
+                  ),
+                );
+              if (ownPending) {
+                bookingId = conflict.id;
+                bookingNumber = conflict.bookingNumber;
+                resumed = true;
+                return;
+              }
+            }
             throw new Error("SLOT_TAKEN");
           }
 
-          const { contactFullName, ...restDetails } = details.data;
+          const { contactFullName, addressSource: _source, ...restDetails } = details.data;
+          void _source;
           const [firstName, ...lastNameParts] = (contactFullName || "").split(
             " ",
           );
@@ -315,6 +380,10 @@ export async function bookService(
               providerId: listing.providerId,
               status: "requested",
               ...restDetails,
+              streetAddress,
+              latitude,
+              longitude,
+              usedSavedAddress,
               contactFirstName: firstName || null,
               contactLastName: lastName || null,
               scheduledDate,
@@ -334,14 +403,13 @@ export async function bookService(
 
           await tx.insert(payments).values({
             bookingId: inserted.id,
-            method: input.paymentMethod as "card" | "cod",
-            status: input.paymentMethod === "cod" ? "pending" : "paid",
+            method: input.paymentMethod,
+            // Online payments stay pending until Razorpay verification;
+            // COD stays pending until cash collection (unchanged).
+            status: "pending",
             amountPaid: pricing.totalCents,
-            paidAt: new Date(),
-            externalId: buildMockExternalId(
-              input.paymentMethod,
-              input.payment?.cardLast4,
-            ),
+            providerPayout: split.providerPayout,
+            transferStatus: split.transferStatus,
           });
           await tx.insert(notifications).values({
             id: notificationId,
@@ -379,48 +447,59 @@ export async function bookService(
       return { success: false, error: "Failed to create booking." };
     }
 
-    const message = `New booking request "${bookingNumber}" for "${listing.title}" on ${formatBookingSchedule(scheduledDate, scheduledTimeSlot)}.`;
-    const payload: NewRequestEvent = {
-      id: notificationId,
-      bookingId,
-      bookingNumber,
-      message,
-      listingTitle: listing.title,
-      customerName: session.user.name,
-      createdAt: new Date().toISOString(),
-      type: "new_request",
-    };
-    emitToUser(listing.providerId, "notification:new", payload);
-    emitToUser(listing.providerId, "booking:updated", {
-      bookingId,
-      bookingNumber,
-      status: "requested",
-    });
-    void pushUnreadCount(listing.providerId);
-
-    // Payment receipt (card = paid immediately; COD stays pending → skip).
-    // Best-effort: booking success never depends on Gmail.
-    if (input.paymentMethod !== "cod") {
-      void (async () => {
-        const [provider] = await db
-          .select({ name: user.name })
-          .from(user)
-          .where(eq(user.id, listing.providerId));
-        await sendMail({
-          to: session.user.email,
-          ...paymentReceiptTemplate({
-            customerName: session.user.name,
-            bookingNumber: bookingNumber!,
-            serviceTitle: listing.title,
-            providerName: provider?.name ?? "your provider",
-            amount: formatCents(pricing.totalCents),
-            schedule: formatBookingSchedule(scheduledDate, scheduledTimeSlot),
-          }),
-        });
-      })().catch((err) => console.error("[email] receipt failed:", err));
+    // Resumed bookings were already notified on the original attempt —
+    // never duplicate the provider's inbox/notification on a retry.
+    if (!resumed) {
+      const message = `New booking request "${bookingNumber}" for "${listing.title}" on ${formatBookingSchedule(scheduledDate, scheduledTimeSlot)}.`;
+      const payload: NewRequestEvent = {
+        id: notificationId,
+        bookingId,
+        bookingNumber,
+        message,
+        listingTitle: listing.title,
+        customerName: session.user.name,
+        createdAt: new Date().toISOString(),
+        type: "new_request",
+      };
+      emitToUser(listing.providerId, "notification:new", payload);
+      emitToUser(listing.providerId, "booking:updated", {
+        bookingId,
+        bookingNumber,
+        status: "requested",
+      });
+      void pushUnreadCount(listing.providerId);
     }
 
-    return { success: true, bookingNumber };
+    // Create the Razorpay order AFTER the atomic unit (an external call
+    // can't roll back). The booking already exists with a pending payment,
+    // so an order failure still leaves a retryable booking instead of an
+    // orphan charge.
+    let payment: BookingPaymentOrder | null = null;
+    {
+      const orderRes = await createRazorpayOrder({
+        amountPaise: pricing.totalCents,
+        receipt: bookingId,
+        notes: { booking_number: bookingNumber, listing_id: listing.id },
+      });
+      if (orderRes.ok) {
+        payment = {
+          orderId: orderRes.data.id,
+          amount: orderRes.data.amount,
+          keyId: razorpayKeyId(),
+        };
+        await db
+          .update(payments)
+          .set({ razorpayOrderId: orderRes.data.id })
+          .where(
+            and(
+              eq(payments.bookingId, bookingId),
+              eq(payments.status, "pending"),
+            ),
+          );
+      }
+    }
+
+    return { success: true, bookingNumber, bookingId, payment };
   } catch (err) {
     console.error(err);
     return {
@@ -428,4 +507,203 @@ export async function bookService(
       error: "Failed to book service. Please try again.",
     };
   }
+}
+
+/** Payment receipt email (best-effort, never fails the caller). */
+async function sendPaymentReceipt(bookingId: string): Promise<void> {
+  const [detail] = await db
+    .select({
+      bookingNumber: bookings.bookingNumber,
+      listingTitle: serviceListings.title,
+      providerName: user.name,
+      customerEmail: sql<string>`(select email from "user" where id = ${bookings.customerId})`,
+      customerName: sql<string>`(select name from "user" where id = ${bookings.customerId})`,
+      totalAmount: bookings.totalAmount,
+      scheduledDate: bookings.scheduledDate,
+      scheduledTimeSlot: bookings.scheduledTimeSlot,
+    })
+    .from(bookings)
+    .innerJoin(serviceListings, eq(bookings.listingId, serviceListings.id))
+    .innerJoin(user, eq(bookings.providerId, user.id))
+    .where(eq(bookings.id, bookingId));
+  if (!detail) return;
+  await sendMail({
+    to: detail.customerEmail,
+    ...paymentReceiptTemplate({
+      customerName: detail.customerName,
+      bookingNumber: detail.bookingNumber,
+      serviceTitle: detail.listingTitle,
+      providerName: detail.providerName,
+      amount: formatCents(detail.totalAmount),
+      schedule: formatBookingSchedule(
+        detail.scheduledDate,
+        detail.scheduledTimeSlot,
+      ),
+    }),
+  }).catch((err) => console.error("[email] receipt failed:", err));
+}
+
+function mapRazorpayMethod(
+  method: string,
+  fallback: Payment["method"],
+): Payment["method"] {
+  if (method === "upi") return "upi";
+  if (method === "card") return "card";
+  return fallback;
+}
+
+/**
+ * Finalize an online payment after Razorpay Checkout: verifies the
+ * signature server-side, confirms capture with Razorpay, then flips the
+ * pending payment to paid. Safe to retry (idempotent on already-paid).
+ */
+export async function verifyBookingPayment(input: {
+  bookingId: string;
+  razorpayOrderId: string;
+  razorpayPaymentId: string;
+  razorpaySignature: string;
+}): Promise<ActionResult> {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session?.user) redirect("/sign-in");
+
+  const [booking] = await db
+    .select({ id: bookings.id, customerId: bookings.customerId })
+    .from(bookings)
+    .where(eq(bookings.id, input.bookingId));
+  if (!booking || booking.customerId !== session.user.id) {
+    return { success: false, error: "Booking not found." };
+  }
+
+  const [payment] = await db
+    .select({
+      id: payments.id,
+      status: payments.status,
+      method: payments.method,
+      razorpayOrderId: payments.razorpayOrderId,
+      transferId: payments.transferId,
+    })
+    .from(payments)
+    .where(eq(payments.bookingId, input.bookingId));
+  if (!payment) {
+    return { success: false, error: "No payment found for this booking." };
+  }
+  if (payment.status === "paid") return { success: true };
+  if (
+    payment.status !== "pending" ||
+    payment.razorpayOrderId !== input.razorpayOrderId
+  ) {
+    return { success: false, error: "This payment can no longer be completed." };
+  }
+
+  const signatureOk = verifyPaymentSignature(
+    input.razorpayOrderId,
+    input.razorpayPaymentId,
+    input.razorpaySignature,
+    razorpayKeySecret(),
+  );
+  if (!signatureOk) {
+    return { success: false, error: "Payment verification failed." };
+  }
+
+  const fetched = await fetchRazorpayPayment(input.razorpayPaymentId);
+  if (!fetched.ok || fetched.data.status !== "captured") {
+    return {
+      success: false,
+      error: "Payment not captured yet. Please try again.",
+    };
+  }
+
+  await db
+    .update(payments)
+    .set({
+      status: "paid",
+      paidAt: new Date(),
+      method: mapRazorpayMethod(fetched.data.method, payment.method),
+      externalId: input.razorpayPaymentId,
+      razorpayPaymentId: input.razorpayPaymentId,
+      transferStatus: payment.transferId ? "created" : "none",
+    })
+    .where(eq(payments.id, payment.id));
+
+  void sendPaymentReceipt(input.bookingId);
+  revalidatePath("/my-bookings");
+  revalidatePath("/customer/my-bookings");
+  revalidatePath("/provider/my-bookings");
+  return { success: true };
+}
+
+/**
+ * Pay-now retry for a pending online payment: creates a fresh Razorpay
+ * order (old unpaid orders expire harmlessly) and returns Checkout params.
+ */
+export async function retryBookingPayment(
+  bookingId: string,
+): Promise<BookServiceResult> {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session?.user) redirect("/sign-in");
+
+  const [booking] = await db
+    .select({
+      id: bookings.id,
+      bookingNumber: bookings.bookingNumber,
+      customerId: bookings.customerId,
+      providerId: bookings.providerId,
+      listingId: bookings.listingId,
+      status: bookings.status,
+    })
+    .from(bookings)
+    .where(eq(bookings.id, bookingId));
+  if (!booking || booking.customerId !== session.user.id) {
+    return { success: false, error: "Booking not found." };
+  }
+  if (booking.status === "cancelled" || booking.status === "completed") {
+    return { success: false, error: "This booking can no longer be paid." };
+  }
+
+  const [payment] = await db
+    .select({
+      id: payments.id,
+      status: payments.status,
+      method: payments.method,
+      amountPaid: payments.amountPaid,
+    })
+    .from(payments)
+    .where(eq(payments.bookingId, bookingId));
+  if (!payment) {
+    return { success: false, error: "No payment found for this booking." };
+  }
+  if (payment.status === "paid") return { success: true };
+  if (payment.status !== "pending") {
+    return { success: false, error: "This payment cannot be retried online." };
+  }
+
+  const split = providerSplit(payment.amountPaid);
+  const orderRes = await createRazorpayOrder({
+    amountPaise: payment.amountPaid,
+    receipt: booking.id,
+    notes: { booking_number: booking.bookingNumber, retry: "true" },
+  });
+  if (!orderRes.ok) {
+    return { success: false, error: "Could not start payment. Try again." };
+  }
+
+  await db
+    .update(payments)
+    .set({
+      razorpayOrderId: orderRes.data.id,
+      providerPayout: split.providerPayout,
+      transferStatus: split.transferStatus,
+    })
+    .where(eq(payments.id, payment.id));
+
+  return {
+    success: true,
+    bookingNumber: booking.bookingNumber,
+    bookingId: booking.id,
+    payment: {
+      orderId: orderRes.data.id,
+      amount: orderRes.data.amount,
+      keyId: razorpayKeyId(),
+    },
+  };
 }

@@ -45,6 +45,7 @@ interface BookingRow {
   streetAddress: string;
   totalAmountCents: number;
   amountPaidCents: number | null;
+  paymentPending: boolean;
   reviewed: boolean;
   requestedAt: Date;
 }
@@ -63,6 +64,7 @@ function rowToListItem(row: BookingRow): BookingListItem {
     addressLine: row.streetAddress,
     totalAmountCents: row.totalAmountCents,
     amountPaidCents: row.amountPaidCents === 0 ? null : row.amountPaidCents,
+    paymentPending: row.paymentPending,
     reviewed: row.reviewed,
     requestedAt: row.requestedAt,
   };
@@ -88,6 +90,10 @@ export async function listBookingsForCustomer(
       amountPaidCents: sql<number | null>`${paidAgg.amountPaidCents}`,
       reviewed:
         sql<boolean>`${reviewedAgg.bookingId} is not null`.as("reviewed"),
+      paymentPending:
+        sql<boolean>`exists (select 1 from payments p where p.booking_id = ${bookings.id} and p.status = 'pending')`.as(
+          "payment_pending",
+        ),
       requestedAt: bookings.requestedAt,
     })
     .from(bookings)
@@ -121,6 +127,10 @@ export async function listBookingsForProvider(
       amountPaidCents: sql<number | null>`${paidAgg.amountPaidCents}`,
       reviewed:
         sql<boolean>`${reviewedAgg.bookingId} is not null`.as("reviewed"),
+      paymentPending:
+        sql<boolean>`exists (select 1 from payments p where p.booking_id = ${bookings.id} and p.status = 'pending')`.as(
+          "payment_pending",
+        ),
       requestedAt: bookings.requestedAt,
     })
     .from(bookings)

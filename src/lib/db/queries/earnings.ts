@@ -10,7 +10,7 @@ export interface EarningsPoint {
   date: string;
   /** Mon / 7 Sep */
   label: string;
-  /** Net payout in cents (providerPayout, else total − fee − tax). */
+  /** Net payout in cents (providerPayout = owed 85% share, else total − fee − tax). */
   netCents: number;
 }
 

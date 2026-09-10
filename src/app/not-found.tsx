@@ -57,7 +57,7 @@ export default function NotFound() {
         </p>
 
         <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <Link href="/allservices">
+          <Link href="/services">
             <Button className="h-10 rounded-full bg-zinc-900 px-6 text-sm text-white hover:bg-zinc-800 dark:bg-white dark:text-zinc-900">
               Browse services
               <ArrowRight className="size-3.5" />

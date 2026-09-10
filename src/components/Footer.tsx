@@ -36,6 +36,26 @@ export function Footer() {
     return null;
   }
 
+  // Unknown top-level paths render the 404 page — hide the footer there too.
+  const firstSegment = pathname?.split("/").filter(Boolean)[0] ?? "";
+  const knownSegments = new Set([
+    "",
+    "services",
+    "customer",
+    "provider",
+    "admin",
+    "notifications",
+    "onboarding",
+    "sign-in",
+    "sign-up",
+    "verify-email",
+    "forgot-password",
+    "reset-password",
+  ]);
+  if (!knownSegments.has(firstSegment)) {
+    return null;
+  }
+
   return (
     <footer className="border-t bg-white dark:bg-zinc-900 dark:border-zinc-800">
       <div className="mx-auto w-full max-w-7xl px-4 py-10 md:px-6">

@@ -31,6 +31,11 @@ import {
   startJob,
   submitReview,
 } from "@/lib/bookings/actions";
+import {
+  retryBookingPayment,
+  verifyBookingPayment,
+} from "@/app/services/[id]/actions";
+import { openRazorpayCheckout } from "@/lib/razorpay-checkout";
 import { BackButton } from "@/components/BackButton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -707,6 +712,7 @@ function BookingActions({
   if (booking.status === "requested" || booking.status === "confirmed") {
     return (
       <div className="flex flex-wrap gap-2 border-t pt-3">
+        {booking.paymentPending ? <PayNowButton bookingId={booking.id} /> : null}
         <CancelButton onCancel={onCancel} disabled={disabled} />
       </div>
     );
@@ -729,8 +735,60 @@ function BookingActions({
   return null;
 }
 
-function CancelButton({
-  onCancel,
+/** Pay-now retry for a pending online payment (Checkout + verify). */
+function PayNowButton({ bookingId }: { bookingId: string }) {
+  const router = useRouter();
+  const [paying, setPaying] = useState(false);
+
+  async function handlePayNow() {
+    if (paying) return;
+    setPaying(true);
+    try {
+      const retry = await retryBookingPayment(bookingId);
+      if (!retry.success) {
+        toast.add({ title: retry.error, type: "error" });
+        return;
+      }
+      if (!retry.payment) {
+        toast.add({ title: "Could not start payment.", type: "error" });
+        return;
+      }
+      await openRazorpayCheckout({
+        keyId: retry.payment.keyId,
+        orderId: retry.payment.orderId,
+        amount: retry.payment.amount,
+        onSuccess: async (creds) => {
+          const verified = await verifyBookingPayment({
+            bookingId,
+            ...creds,
+          });
+          if (!verified.success) {
+            toast.add({ title: verified.error, type: "error" });
+            return;
+          }
+          toast.add({ title: "Payment successful!", type: "success" });
+          router.refresh();
+        },
+        onDismiss: () => {},
+      });
+    } catch (err) {
+      toast.add({
+        title: err instanceof Error ? err.message : "Payment failed.",
+        type: "error",
+      });
+    } finally {
+      setPaying(false);
+    }
+  }
+
+  return (
+    <Button size="sm" onClick={handlePayNow} disabled={paying}>
+      {paying ? "Opening payment…" : "Pay now"}
+    </Button>
+  );
+}
+
+function CancelButton({  onCancel,
   disabled,
 }: {
   onCancel: () => void;
