@@ -17,6 +17,7 @@ import {
   Star,
   User,
   X,
+  Zap,
 } from "lucide-react";
 
 import type { BookingListItem, BookingStatus, Role } from "@/types";
@@ -72,6 +73,44 @@ function formatScheduled(booking: BookingListItem): string {
   );
 }
 
+/**
+ * Provider work-queue rank: actionable statuses always sort first so
+ * in-progress / confirmed jobs never sink under newer completed ones.
+ */
+const PROVIDER_STATUS_RANK: Record<BookingStatus, number> = {
+  in_progress: 0,
+  confirmed: 1,
+  requested: 2,
+  completed: 3,
+  cancelled: 4,
+};
+
+/** Card highlight + helper copy for bookings waiting on provider action. */
+const PROVIDER_ACTION_STYLE: Partial<
+  Record<BookingStatus, { card: string; label: string }>
+> = {
+  requested: {
+    card: "border-amber-300 bg-amber-50/70 ring-1 ring-amber-200 dark:border-amber-800 dark:bg-amber-950/30 dark:ring-amber-900",
+    label: "Needs response",
+  },
+  confirmed: {
+    card: "border-blue-300 bg-blue-50/70 ring-1 ring-blue-200 dark:border-blue-800 dark:bg-blue-950/30 dark:ring-blue-900",
+    label: "Ready to start",
+  },
+  in_progress: {
+    card: "border-violet-300 bg-violet-50/70 ring-1 ring-violet-200 dark:border-violet-800 dark:bg-violet-950/30 dark:ring-violet-900",
+    label: "Ready to complete",
+  },
+};
+
+function providerActionStyle(
+  isCustomerView: boolean,
+  status: BookingStatus,
+): { card: string; label: string } | undefined {
+  if (isCustomerView) return undefined;
+  return PROVIDER_ACTION_STYLE[status];
+}
+
 interface MyBookingsClientProps {
   role: Role;
   bookings: BookingListItem[];
@@ -98,6 +137,7 @@ export function MyBookingsClient({
   const [searchInput, setSearchInput] = useState("");
   const debouncedSearch = useDebouncedValue(searchInput, 300);
   const [page, setPage] = useState(1);
+  const [actionableOnly, setActionableOnly] = useState(false);
   const isProvider = role === "provider";
 
   // Provider tabs — default to "mine" when ?review= points to a customer-hat booking.
@@ -205,23 +245,48 @@ export function MyBookingsClient({
 
     if (dateFilter) {
       // Both sides are "YYYY-MM-DD" (date input value vs date column).
+      result = result.filter((booking) => booking.scheduledDate === dateFilter);
+    }
+
+    if (!isCustomerView && actionableOnly) {
       result = result.filter(
-        (booking) => booking.scheduledDate === dateFilter,
+        (booking) => PROVIDER_STATUS_RANK[booking.status] <= 2,
       );
     }
 
-    return result.sort(
-      (a, b) =>
-        new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime(),
-    );
+    // Provider work queue: actionable statuses first (in_progress,
+    // confirmed, requested), newest-first within each rank. Customer
+    // views stay purely chronological.
+    return [...result].sort((a, b) => {
+      if (!isCustomerView) {
+        const rankDiff =
+          PROVIDER_STATUS_RANK[a.status] - PROVIDER_STATUS_RANK[b.status];
+        if (rankDiff !== 0) return rankDiff;
+      }
+      return (
+        new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime()
+      );
+    });
   }, [
     activeBookings,
     debouncedSearch,
     serviceFilter,
     statusFilter,
     dateFilter,
+    actionableOnly,
     isCustomerView,
   ]);
+
+  // Jobs waiting on provider action (received tab only).
+  const actionableCount = useMemo(
+    () =>
+      isCustomerView
+        ? 0
+        : activeBookings.filter(
+            (booking) => PROVIDER_STATUS_RANK[booking.status] <= 2,
+          ).length,
+    [activeBookings, isCustomerView],
+  );
 
   // Reset to first page whenever the list or filters change.
   useEffect(() => {
@@ -233,6 +298,7 @@ export function MyBookingsClient({
     serviceFilter,
     statusFilter,
     dateFilter,
+    actionableOnly,
     activeBookings.length,
   ]);
 
@@ -246,9 +312,7 @@ export function MyBookingsClient({
     safePage * BOOKINGS_PAGE_SIZE,
   );
   const rangeStart =
-    filteredBookings.length === 0
-      ? 0
-      : (safePage - 1) * BOOKINGS_PAGE_SIZE + 1;
+    filteredBookings.length === 0 ? 0 : (safePage - 1) * BOOKINGS_PAGE_SIZE + 1;
   const rangeEnd = Math.min(
     safePage * BOOKINGS_PAGE_SIZE,
     filteredBookings.length,
@@ -259,7 +323,15 @@ export function MyBookingsClient({
     if (pageCount <= 7) {
       return Array.from({ length: pageCount }, (_, i) => i + 1);
     }
-    const window = new Set([1, 2, pageCount - 1, pageCount, safePage - 1, safePage, safePage + 1]);
+    const window = new Set([
+      1,
+      2,
+      pageCount - 1,
+      pageCount,
+      safePage - 1,
+      safePage,
+      safePage + 1,
+    ]);
     return [...window]
       .filter((n) => n >= 1 && n <= pageCount)
       .sort((a, b) => a - b);
@@ -269,6 +341,7 @@ export function MyBookingsClient({
     Boolean(dateFilter) ||
     Boolean(debouncedSearch.trim()) ||
     statusFilter !== "all" ||
+    actionableOnly ||
     (isCustomerView && serviceFilter !== "all");
 
   return (
@@ -285,7 +358,7 @@ export function MyBookingsClient({
               ? "Your appointments — confirmed, upcoming and past."
               : activeHat === "mine"
                 ? "Services you booked as a customer."
-                : "Incoming requests and scheduled jobs — confirm or start work."}
+                : "Incoming requests and scheduled jobs — action-needed bookings appear first."}
           </p>
         </div>
         <div className="p-3 sm:p-4">
@@ -294,14 +367,20 @@ export function MyBookingsClient({
             <div className="mb-4 inline-flex rounded-full border bg-white p-1 dark:bg-zinc-900">
               <button
                 type="button"
-                onClick={() => setActiveHat("received")}
+                onClick={() => {
+                  setActiveHat("received");
+                  setActionableOnly(false);
+                }}
                 className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${activeHat === "received" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
               >
                 Jobs received ({bookings.length})
               </button>
               <button
                 type="button"
-                onClick={() => setActiveHat("mine")}
+                onClick={() => {
+                  setActiveHat("mine");
+                  setActionableOnly(false);
+                }}
                 className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${activeHat === "mine" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
               >
                 My bookings ({customerBookings.length})
@@ -395,6 +474,7 @@ export function MyBookingsClient({
                   setSearchInput("");
                   setServiceFilter("all");
                   setStatusFilter("all");
+                  setActionableOnly(false);
                 }}
               >
                 <CalendarX2 className="size-3.5" />
@@ -426,144 +506,177 @@ export function MyBookingsClient({
             </div>
           ) : (
             <>
+              {!isCustomerView && actionableCount > 0 && (
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 dark:border-amber-900 dark:bg-amber-950/30">
+                  <span className="flex items-center gap-2 text-sm font-medium text-amber-800 dark:text-amber-300">
+                    <Zap className="size-4" />
+                    {actionableCount} job{actionableCount === 1 ? "" : "s"} need
+                    {actionableCount === 1 ? "s" : ""} your action
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setActionableOnly((prev) => !prev)}
+                    aria-pressed={actionableOnly}
+                    className={`rounded-full px-3 py-1 text-xs font-semibold transition ${actionableOnly ? "bg-amber-600 text-white hover:bg-amber-700" : "bg-white text-amber-800 ring-1 ring-amber-300 hover:bg-amber-100 dark:bg-transparent dark:text-amber-300 dark:ring-amber-800 dark:hover:bg-amber-900/40"}`}
+                  >
+                    {actionableOnly ? "Show all" : "Show only these"}
+                  </button>
+                </div>
+              )}
               <p className="mb-3 text-xs text-muted-foreground">
                 Showing {rangeStart}–{rangeEnd} of {filteredBookings.length}{" "}
                 booking{filteredBookings.length === 1 ? "" : "s"}
               </p>
               <div className="space-y-3">
-                {pagedBookings.map((booking) => (
-                <div
-                  key={booking.id}
-                  className="rounded-xl border bg-cream p-3 transition hover:border-zinc-300 sm:p-4 dark:bg-zinc-800/60 dark:border-zinc-700 dark:hover:border-zinc-600"
-                >
-                  <div className="flex flex-col gap-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <h3 className="text-[15px] font-semibold sm:text-base">
-                          {booking.listingTitle}
-                        </h3>
-                        {booking.categoryName && (
-                          <p className="text-xs text-muted-foreground max-sm:hidden">
-                            {booking.categoryName}
+                {pagedBookings.map((booking) => {
+                  const actionStyle = providerActionStyle(
+                    isCustomerView,
+                    booking.status,
+                  );
+                  return (
+                    <div
+                      key={booking.id}
+                      className={`rounded-xl border bg-cream p-3 transition hover:border-zinc-300 sm:p-4 dark:bg-zinc-800/60 dark:border-zinc-700 dark:hover:border-zinc-600 ${actionStyle?.card ?? ""}`}
+                    >
+                      <div className="flex flex-col gap-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <h3 className="text-[15px] font-semibold sm:text-base">
+                              {booking.listingTitle}
+                            </h3>
+                            {booking.categoryName && (
+                              <p className="text-xs text-muted-foreground max-sm:hidden">
+                                {booking.categoryName}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            {actionStyle && (
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800 max-sm:px-2 dark:bg-amber-900/50 dark:text-amber-300">
+                                <span className="size-1.5 animate-pulse rounded-full bg-current" />
+                                {actionStyle.label}
+                              </span>
+                            )}
+                            <Badge
+                              variant="outline"
+                              className={`capitalize max-sm:px-2 max-sm:py-0.5 max-sm:text-[11px] ${STATUS_CLASS[booking.status]}`}
+                            >
+                              {BOOKING_STATUS_LABELS[booking.status]}
+                            </Badge>
+                          </div>
+                        </div>
+
+                        {/* Mobile-only compact summary */}
+                        <div className="flex flex-col gap-2.5 text-sm sm:hidden">
+                          <p className="text-xs text-muted-foreground">
+                            {booking.categoryName && (
+                              <span>{booking.categoryName} · </span>
+                            )}
+                            <span className="font-mono font-medium text-foreground/80">
+                              #{booking.bookingNumber}
+                            </span>
                           </p>
-                        )}
-                      </div>
-                      <Badge
-                        variant="outline"
-                        className={`capitalize max-sm:px-2 max-sm:py-0.5 max-sm:text-[11px] ${STATUS_CLASS[booking.status]}`}
-                      >
-                        {BOOKING_STATUS_LABELS[booking.status]}
-                      </Badge>
-                    </div>
 
-                    {/* Mobile-only compact summary */}
-                    <div className="flex flex-col gap-2.5 text-sm sm:hidden">
-                      <p className="text-xs text-muted-foreground">
-                        {booking.categoryName && (
-                          <span>{booking.categoryName} · </span>
-                        )}
-                        <span className="font-mono font-medium text-foreground/80">
-                          #{booking.bookingNumber}
-                        </span>
-                      </p>
+                          <div className="flex items-center gap-2 text-foreground">
+                            <CalendarDays className="size-4 shrink-0 text-primary" />
+                            <span className="font-medium">
+                              {formatScheduled(booking)}
+                            </span>
+                          </div>
 
-                      <div className="flex items-center gap-2 text-foreground">
-                        <CalendarDays className="size-4 shrink-0 text-primary" />
-                        <span className="font-medium">
-                          {formatScheduled(booking)}
-                        </span>
-                      </div>
+                          <div className="flex items-center gap-2 text-muted-foreground">
+                            <User className="size-4 shrink-0" />
+                            <span className="truncate">
+                              {isCustomerView ? "Provider" : "Customer"}:{" "}
+                              <span className="font-medium text-foreground">
+                                {booking.counterpartyName || "Not assigned yet"}
+                              </span>
+                            </span>
+                          </div>
 
-                      <div className="flex items-center gap-2 text-muted-foreground">
-                        <User className="size-4 shrink-0" />
-                        <span className="truncate">
-                          {isCustomerView ? "Provider" : "Customer"}:{" "}
-                          <span className="font-medium text-foreground">
-                            {booking.counterpartyName || "Not assigned yet"}
+                          <div className="flex items-center justify-between gap-2 rounded-lg bg-muted/60 px-3 py-2">
+                            <span className="font-semibold text-foreground">
+                              {formatCents(booking.totalAmountCents)}
+                            </span>
+                            {booking.amountPaidCents !== null && (
+                              <span className="text-xs font-medium text-green-600 dark:text-green-400">
+                                {formatCents(booking.amountPaidCents)} paid
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <MapPin className="size-3.5 shrink-0" />
+                            <span className="truncate">
+                              {booking.addressLine}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="grid gap-2 text-sm text-muted-foreground max-sm:hidden sm:grid-cols-2">
+                          <span className="flex items-center gap-2">
+                            <Hash className="size-4 shrink-0" />
+                            <span className="font-mono font-medium text-foreground">
+                              {booking.bookingNumber}
+                            </span>
                           </span>
-                        </span>
-                      </div>
 
-                      <div className="flex items-center justify-between gap-2 rounded-lg bg-muted/60 px-3 py-2">
-                        <span className="font-semibold text-foreground">
-                          {formatCents(booking.totalAmountCents)}
-                        </span>
-                        {booking.amountPaidCents !== null && (
-                          <span className="text-xs font-medium text-green-600 dark:text-green-400">
-                            {formatCents(booking.amountPaidCents)} paid
+                          <span className="flex items-center gap-2">
+                            <User className="size-4 shrink-0" />
+                            {isCustomerView ? "Provider" : "Customer"}:{" "}
+                            <span className="font-medium text-foreground">
+                              {booking.counterpartyName || "Not assigned yet"}
+                            </span>
                           </span>
-                        )}
-                      </div>
 
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <MapPin className="size-3.5 shrink-0" />
-                        <span className="truncate">{booking.addressLine}</span>
+                          <span className="flex items-center gap-2">
+                            <CalendarDays className="size-4 shrink-0" />
+                            {formatScheduled(booking)}
+                          </span>
+
+                          <span className="flex items-center gap-2">
+                            <span className="font-medium text-foreground">
+                              {formatCents(booking.totalAmountCents)}
+                            </span>
+                            total
+                            {booking.amountPaidCents !== null && (
+                              <span className="text-green-600 dark:text-green-400">
+                                · {formatCents(booking.amountPaidCents)} paid
+                              </span>
+                            )}
+                          </span>
+
+                          <span className="flex items-start gap-2 sm:col-span-2">
+                            <MapPin className="mt-0.5 size-4 shrink-0" />
+                            <span className="wrap-break-word">
+                              {booking.addressLine}
+                            </span>
+                          </span>
+                        </div>
+
+                        {/* Lifecycle actions */}
+                        <BookingActions
+                          isCustomer={isCustomerView}
+                          booking={booking}
+                          disabled={isPending}
+                          onRespond={(accept) =>
+                            runAction(() =>
+                              respondToBookingRequest(booking.id, accept),
+                            )
+                          }
+                          onStart={() => runAction(() => startJob(booking.id))}
+                          onComplete={() =>
+                            runAction(() => completeJob(booking.id))
+                          }
+                          onCancel={() =>
+                            runAction(() => cancelMyBooking(booking.id))
+                          }
+                          onReview={() => setReviewing(booking)}
+                        />
                       </div>
                     </div>
-
-                    <div className="grid gap-2 text-sm text-muted-foreground max-sm:hidden sm:grid-cols-2">
-                      <span className="flex items-center gap-2">
-                        <Hash className="size-4 shrink-0" />
-                        <span className="font-mono font-medium text-foreground">
-                          {booking.bookingNumber}
-                        </span>
-                      </span>
-
-                      <span className="flex items-center gap-2">
-                        <User className="size-4 shrink-0" />
-                        {isCustomerView ? "Provider" : "Customer"}:{" "}
-                        <span className="font-medium text-foreground">
-                          {booking.counterpartyName || "Not assigned yet"}
-                        </span>
-                      </span>
-
-                      <span className="flex items-center gap-2">
-                        <CalendarDays className="size-4 shrink-0" />
-                        {formatScheduled(booking)}
-                      </span>
-
-                      <span className="flex items-center gap-2">
-                        <span className="font-medium text-foreground">
-                          {formatCents(booking.totalAmountCents)}
-                        </span>
-                        total
-                        {booking.amountPaidCents !== null && (
-                          <span className="text-green-600 dark:text-green-400">
-                            · {formatCents(booking.amountPaidCents)} paid
-                          </span>
-                        )}
-                      </span>
-
-                      <span className="flex items-start gap-2 sm:col-span-2">
-                        <MapPin className="mt-0.5 size-4 shrink-0" />
-                        <span className="wrap-break-word">
-                          {booking.addressLine}
-                        </span>
-                      </span>
-                    </div>
-
-                    {/* Lifecycle actions */}
-                    <BookingActions
-                      isCustomer={isCustomerView}
-                      booking={booking}
-                      disabled={isPending}
-                      onRespond={(accept) =>
-                        runAction(() =>
-                          respondToBookingRequest(booking.id, accept),
-                        )
-                      }
-                      onStart={() => runAction(() => startJob(booking.id))}
-                      onComplete={() =>
-                        runAction(() => completeJob(booking.id))
-                      }
-                      onCancel={() =>
-                        runAction(() => cancelMyBooking(booking.id))
-                      }
-                      onReview={() => setReviewing(booking)}
-                    />
-                  </div>
-                </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Pagination */}
@@ -712,7 +825,9 @@ function BookingActions({
   if (booking.status === "requested" || booking.status === "confirmed") {
     return (
       <div className="flex flex-wrap gap-2 border-t pt-3">
-        {booking.paymentPending ? <PayNowButton bookingId={booking.id} /> : null}
+        {booking.paymentPending ? (
+          <PayNowButton bookingId={booking.id} />
+        ) : null}
         <CancelButton onCancel={onCancel} disabled={disabled} />
       </div>
     );
@@ -788,7 +903,8 @@ function PayNowButton({ bookingId }: { bookingId: string }) {
   );
 }
 
-function CancelButton({  onCancel,
+function CancelButton({
+  onCancel,
   disabled,
 }: {
   onCancel: () => void;

@@ -62,3 +62,6 @@ CLAUDE.md
 .idea/
 *.swp
 *.swo
+
+# local operational scripts (seed/backfill/verify helpers, never committed)
+scripts/

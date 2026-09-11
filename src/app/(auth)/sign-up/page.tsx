@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Wrench } from "lucide-react";
+import { BrandLogo } from "@/components/BrandLogo";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -22,7 +22,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { signUpSchema } from "@/lib/validators";
+import { signUpSchema, NAME_MAX_LENGTH } from "@/lib/validators";
+import { toast } from "@/components/ui/toast";
 import { authClient } from "@/lib/auth-client";
 import { useRouter, useSearchParams } from "next/navigation";
 import SocialSignInButton from "../components/SocialSignInButton";
@@ -34,6 +35,7 @@ export default function SignUpPage() {
   const safeNext = getSafeNext(searchParams.get("next"));
   const signInHref = safeNext ? `/sign-in?next=${encodeURIComponent(safeNext)}` : "/sign-in";
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [name, setName] = useState("");
   const [role, setRole] = useState<"customer" | "provider">("customer");
   const [isLoading, setIsLoading] = useState(false);
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -95,6 +97,8 @@ export default function SignUpPage() {
         if (issue.path[0]) fieldErrors[issue.path[0].toString()] = issue.message;
       });
       setErrors(fieldErrors);
+      const firstError = result.error.issues[0]?.message ?? "Please fix the highlighted fields.";
+      toast.add({ title: firstError, type: "error" });
       return;
     }
 
@@ -112,7 +116,9 @@ export default function SignUpPage() {
     setIsLoading(false);
 
     if (error) {
-      setErrors({ email: error.message ?? "Failed to create account" });
+      const message = error.message ?? "Failed to create account";
+      setErrors({ email: message });
+      toast.add({ title: message, type: "error" });
       return;
     }
 
@@ -128,12 +134,7 @@ export default function SignUpPage() {
   return (
     <Card className="w-full rounded-2xl border bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] dark:bg-zinc-900 dark:border-zinc-800">
       <CardHeader className="space-y-3 pb-4">
-        <Link href="/" className="inline-flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-lg bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
-            <Wrench className="size-3.5" />
-          </span>
-          <span className="text-sm font-bold tracking-tight">HandyHub</span>
-        </Link>
+        <BrandLogo height={32} />
         <div className="space-y-1.5 pt-1">
           <CardTitle className="text-xl font-semibold tracking-tight">Create an account</CardTitle>
           <CardDescription className="text-sm leading-relaxed">Join HandyHub as a customer or provider — same account, different tools.</CardDescription>
@@ -144,7 +145,13 @@ export default function SignUpPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="name" className="text-xs font-medium">Full name</Label>
-              <Input id="name" name="name" placeholder="Alex Morgan" autoComplete="name" aria-invalid={Boolean(errors.name)} className="h-9 rounded-xl bg-white" disabled={isLoading} />
+              <Input id="name" name="name" placeholder="Alex Morgan" autoComplete="name" aria-invalid={Boolean(errors.name)} aria-describedby="name-hint" className="h-9 rounded-xl bg-white" disabled={isLoading} value={name} onChange={(e) => setName(e.target.value)} />
+              <div className="flex items-center justify-between gap-2">
+                <p id="name-hint" className="text-xs text-muted-foreground">Max {NAME_MAX_LENGTH} characters</p>
+                <span aria-live="polite" className={`text-xs tabular-nums ${name.length > NAME_MAX_LENGTH ? "font-medium text-destructive" : "text-muted-foreground"}`}>
+                  {name.length}/{NAME_MAX_LENGTH}
+                </span>
+              </div>
               {errors.name && <p role="alert" className="text-xs text-destructive">{errors.name}</p>}
             </div>
             <div className="space-y-1.5">

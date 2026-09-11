@@ -5,9 +5,9 @@ export function formatCents(
   options?: { withCents?: boolean },
 ): string {
   const withCents = options?.withCents ?? true;
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat("en-IN", {
     style: "currency",
-    currency: "USD",
+    currency: "INR",
     minimumFractionDigits: withCents ? 2 : 0,
     maximumFractionDigits: withCents ? 2 : 0,
   }).format(cents / 100);
@@ -26,7 +26,7 @@ export const PRICING_TYPE_LABELS: Record<string, string> = {
   visit: "visit",
 };
 
-/** Suffix shown next to a price, e.g. "$85/hr" */
+/** Suffix shown next to a price, e.g. "₹85/hr" */
 export function pricingUnitLabel(pricingType: string): string {
   return PRICING_TYPE_LABELS[pricingType] ?? "";
 }

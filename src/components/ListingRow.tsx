@@ -65,7 +65,7 @@ export default function ListingRow({
           </div>
         </div>
 
-        <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+        <p className="mt-1 line-clamp-3 text-sm text-muted-foreground">
           {listing.description || "Professional service at your doorstep."}
         </p>
 

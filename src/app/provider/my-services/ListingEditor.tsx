@@ -25,6 +25,10 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "@/components/ui/toast";
+import {
+  LISTING_DESCRIPTION_MAX_LENGTH,
+  LISTING_TITLE_MAX_LENGTH,
+} from "@/lib/validators";
 
 const MAX_IMAGE_MB = 2;
 
@@ -274,6 +278,27 @@ export function ListingEditor({ categories, initial }: ListingEditorProps) {
       });
       return;
     }
+    if (title.trim().length < 5) {
+      toast.add({
+        title: "Title must be at least 5 characters.",
+        type: "error",
+      });
+      return;
+    }
+    if (title.trim().length > LISTING_TITLE_MAX_LENGTH) {
+      toast.add({
+        title: `Title must be at most ${LISTING_TITLE_MAX_LENGTH} characters.`,
+        type: "error",
+      });
+      return;
+    }
+    if (description.trim().length > LISTING_DESCRIPTION_MAX_LENGTH) {
+      toast.add({
+        title: `Description must be at most ${LISTING_DESCRIPTION_MAX_LENGTH} characters.`,
+        type: "error",
+      });
+      return;
+    }
     if (!location.trim()) {
       toast.add({ title: "Service area is required.", type: "error" });
       return;
@@ -364,8 +389,14 @@ export function ListingEditor({ categories, initial }: ListingEditorProps) {
                 onChange={(event) => setTitle(event.target.value)}
                 placeholder="e.g. Deep home cleaning — 3 bedrooms"
                 className="bg-background"
-                maxLength={120}
+                aria-describedby="title-hint"
               />
+              <div className="flex items-center justify-between gap-2">
+                <p id="title-hint" className="text-xs text-muted-foreground">Max {LISTING_TITLE_MAX_LENGTH} characters</p>
+                <span aria-live="polite" className={`text-xs tabular-nums ${title.length > LISTING_TITLE_MAX_LENGTH ? "font-medium text-destructive" : "text-muted-foreground"}`}>
+                  {title.length}/{LISTING_TITLE_MAX_LENGTH}
+                </span>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -376,7 +407,7 @@ export function ListingEditor({ categories, initial }: ListingEditorProps) {
                 onChange={(event) => setDescription(event.target.value)}
                 placeholder="What's included, what customers can expect…"
                 rows={4}
-                maxLength={2000}
+                maxLength={LISTING_DESCRIPTION_MAX_LENGTH}
                 className="bg-background"
               />
             </div>
@@ -476,10 +507,10 @@ export function ListingEditor({ categories, initial }: ListingEditorProps) {
                 </div>
 
                 <div className="max-w-xs space-y-2">
-                  <Label htmlFor="basePrice">Base price ($) *</Label>
+                  <Label htmlFor="basePrice">Base price (₹) *</Label>
                   <div className="relative">
                     <span className="absolute top-1/2 left-3 -translate-y-1/2 text-sm text-muted-foreground">
-                      $
+                      ₹
                     </span>
                     <Input
                       id="basePrice"
@@ -543,7 +574,7 @@ export function ListingEditor({ categories, initial }: ListingEditorProps) {
                   </div>
                   <div className="relative">
                     <span className="absolute top-1.5 left-3 text-sm text-muted-foreground">
-                      $
+                      ₹
                     </span>
                     <Input
                       type="number"

@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Mail, MapPin, Phone, Wrench } from "lucide-react";
+import { Mail, MapPin, Phone } from "lucide-react";
+import { BrandLogo } from "@/components/BrandLogo";
 
 const platformLinks = [
   { href: "/services", label: "Services" },
@@ -61,14 +62,11 @@ export function Footer() {
       <div className="mx-auto w-full max-w-7xl px-4 py-10 md:px-6">
         <div className="flex flex-col gap-8 md:flex-row md:justify-between">
           <div className="max-w-sm">
-            <Link href="/" className="inline-flex items-center gap-2.5">
-              <span className="flex size-9 items-center justify-center rounded-xl bg-zinc-900 text-white shadow-sm dark:bg-white dark:text-zinc-900">
-                <Wrench className="size-4" />
-              </span>
-              <span className="text-base font-bold tracking-tight">HandyHub</span>
-            </Link>
+            <BrandLogo height={56} priority={false} />
+
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-              Book trusted local pros for plumbing, cleaning, electrical and more. Real pros, real reviews, on your schedule.
+              Book trusted local pros for plumbing, cleaning, electrical and
+              more. Real pros, real reviews, on your schedule.
             </p>
             <ul className="mt-4 space-y-2 text-sm text-muted-foreground">
               <li className="flex items-center gap-2">
@@ -84,11 +82,16 @@ export function Footer() {
 
           <div className="flex gap-10 text-sm">
             <nav aria-label="Platform" className="min-w-24">
-              <h3 className="text-xs font-semibold tracking-wider uppercase text-zinc-900 dark:text-white">Platform</h3>
+              <h3 className="text-xs font-semibold tracking-wider uppercase text-zinc-900 dark:text-white">
+                Platform
+              </h3>
               <ul className="mt-3 space-y-2 text-muted-foreground">
                 {platformLinks.map((link) => (
                   <li key={link.label}>
-                    <Link href={link.href} className="transition-colors hover:text-foreground">
+                    <Link
+                      href={link.href}
+                      className="transition-colors hover:text-foreground"
+                    >
                       {link.label}
                     </Link>
                   </li>
@@ -96,23 +99,36 @@ export function Footer() {
               </ul>
             </nav>
             <nav aria-label="Support" className="min-w-24">
-              <h3 className="text-xs font-semibold tracking-wider uppercase text-zinc-900 dark:text-white">Support</h3>
+              <h3 className="text-xs font-semibold tracking-wider uppercase text-zinc-900 dark:text-white">
+                Support
+              </h3>
               <ul className="mt-3 space-y-2 text-muted-foreground">
                 {supportLinks.map((link) => (
                   <li key={link.label}>
-                    <Link href={link.href} className="transition-colors hover:text-foreground">
+                    <Link
+                      href={link.href}
+                      className="transition-colors hover:text-foreground"
+                    >
                       {link.label}
                     </Link>
                   </li>
                 ))}
               </ul>
             </nav>
-            <nav aria-label="For providers" className="hidden min-w-24 sm:block">
-              <h3 className="text-xs font-semibold tracking-wider uppercase text-zinc-900 dark:text-white">Providers</h3>
+            <nav
+              aria-label="For providers"
+              className="hidden min-w-24 sm:block"
+            >
+              <h3 className="text-xs font-semibold tracking-wider uppercase text-zinc-900 dark:text-white">
+                Providers
+              </h3>
               <ul className="mt-3 space-y-2 text-muted-foreground">
                 {providerLinks.map((link) => (
                   <li key={link.label}>
-                    <Link href={link.href} className="transition-colors hover:text-foreground">
+                    <Link
+                      href={link.href}
+                      className="transition-colors hover:text-foreground"
+                    >
                       {link.label}
                     </Link>
                   </li>

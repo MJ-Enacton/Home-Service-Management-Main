@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Wrench } from "lucide-react";
+import { BrandLogo } from "@/components/BrandLogo";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -82,12 +82,7 @@ export default function SignInPage() {
   return (
     <Card className="w-full rounded-2xl border bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] dark:bg-zinc-900 dark:border-zinc-800">
       <CardHeader className="space-y-3 pb-4">
-        <Link href="/" className="inline-flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-lg bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
-            <Wrench className="size-3.5" />
-          </span>
-          <span className="text-sm font-bold tracking-tight">HandyHub</span>
-        </Link>
+        <BrandLogo height={32} />
         <div className="space-y-1.5 pt-1">
           <CardTitle className="text-xl font-semibold tracking-tight">Welcome back</CardTitle>
           <CardDescription className="text-sm leading-relaxed">Sign in to manage bookings and services</CardDescription>

@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import {
-  DollarSign,
+  IndianRupee,
   CalendarDays,
   CalendarCheck,
   Star,
@@ -151,7 +151,7 @@ export default function ProviderDashboardClient({
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
                 <span className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <DollarSign className="size-4" />
+                  <IndianRupee className="size-4" />
                 </span>
                 <Badge
                   variant="secondary"

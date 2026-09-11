@@ -12,13 +12,13 @@ import {
   ClipboardList,
   Menu,
   X,
-  Home,
   LogOut,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { SignOutDialog } from "@/components/auth/SignOutDialog";
+import { BrandLogo } from "@/components/BrandLogo";
 
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
@@ -77,17 +77,9 @@ export function AdminShell({ children, user }: AdminShellProps) {
     <div className="flex min-h-screen w-full">
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 hidden w-60 flex-col border-r bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 md:flex">
-        <Link
-          href="/"
-          className="flex items-center gap-2 border-b px-4 py-4 dark:border-zinc-800"
-        >
-          <div className="rounded-lg bg-primary p-1.5">
-            <Home className="size-5 text-white" />
-          </div>
-          <span className="bg-linear-to-r bg-clip-text text-xl font-bold tracking-tight text-transparent from-primary to-primary/60">
-            HomeService
-          </span>
-        </Link>
+        <div className="flex items-center gap-2 border-b px-4 py-3 dark:border-zinc-800">
+          <BrandLogo height={30} />
+        </div>
 
         <div className="flex flex-1 flex-col overflow-y-auto p-3">
           <NavLinks />
@@ -119,12 +111,7 @@ export function AdminShell({ children, user }: AdminShellProps) {
 
       {/* Mobile top bar */}
       <div className="fixed inset-x-0 top-0 z-40 flex h-14 items-center justify-between border-b bg-white/95 px-4 backdrop-blur dark:border-zinc-800 dark:bg-black/95 md:hidden">
-        <Link href="/" className="flex items-center gap-2">
-          <div className="rounded-lg bg-primary p-1.5">
-            <Home className="size-4 text-white" />
-          </div>
-          <span className="text-lg font-bold tracking-tight">HomeService</span>
-        </Link>
+        <BrandLogo height={28} />
         <Button
           variant="ghost"
           size="icon-sm"

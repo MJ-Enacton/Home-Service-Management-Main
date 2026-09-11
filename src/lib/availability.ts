@@ -76,7 +76,9 @@ export function generateSlots({
     date.getMonth() === now.getMonth() &&
     date.getDate() === now.getDate();
 
-  const currentMinutes = isToday ? timeToMinutes(minutesToTime(now.getHours() * 60 + now.getMinutes())) : -1;
+  const currentMinutes = isToday
+    ? timeToMinutes(minutesToTime(now.getHours() * 60 + now.getMinutes()))
+    : -1;
 
   const slots: Slot[] = [];
   for (const window of windows) {
@@ -104,23 +106,4 @@ export function generateSlots({
     seen.add(slot.time);
     return true;
   });
-}
-
-/** Next calendar date (YYYY-MM-DD) that has at least one active window — used for "Next available" hints. */
-export function nextAvailableDate(
-  windows: AvailabilityWindow[],
-  from: Date = new Date(),
-  horizonDays = 30,
-): string | null {
-  for (let offset = 0; offset <= horizonDays; offset++) {
-    const d = new Date(from);
-    d.setDate(d.getDate() + offset);
-    const day = d.getDay();
-    if (windows.some((w) => w.isActive && w.dayOfWeek === day)) {
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-        d.getDate(),
-      ).padStart(2, "0")}`;
-    }
-  }
-  return null;
 }

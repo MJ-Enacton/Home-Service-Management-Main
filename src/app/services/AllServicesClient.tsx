@@ -306,7 +306,7 @@ export function AllServicesClient({ categories }: AllServicesClientProps) {
         <div>
           <h3 className="text-sm font-semibold">Price Range</h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            ${priceDraft[0]} — ${priceDraft[1]}{" "}
+            ₹{priceDraft[0]} — ₹{priceDraft[1]}{" "}
             {priceDraft[0] === 0 && priceDraft[1] === PRICE_CEILING
               ? "(any)"
               : ""}
@@ -321,8 +321,8 @@ export function AllServicesClient({ categories }: AllServicesClientProps) {
               aria-label="Price range"
             />
             <div className="mt-1 flex justify-between text-[10px] leading-none text-muted-foreground">
-              <span>$0</span>
-              <span>${PRICE_CEILING}</span>
+              <span>₹0</span>
+              <span>₹{PRICE_CEILING}</span>
             </div>
           </div>
         </div>

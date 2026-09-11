@@ -11,12 +11,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { BarChart3, ChartLine, DollarSign } from "lucide-react";
+import { BarChart3, ChartLine, IndianRupee } from "lucide-react";
 
-import type {
-  EarningsPoint,
-  EarningsRange,
-} from "@/lib/db/queries/earnings";
+import type { EarningsPoint, EarningsRange } from "@/lib/db/queries/earnings";
 import { getEarningsSeries } from "./actions";
 import { formatCents } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -198,20 +195,20 @@ export function EarningsChart({
       </CardHeader>
       <CardContent>
         {isEmpty ? (
-          <div className="flex h-[260px] flex-col items-center justify-center rounded-xl border border-dashed bg-zinc-50/60 px-6 text-center sm:h-[300px] dark:bg-zinc-900/40">
+          <div className="flex h-65 flex-col items-center justify-center rounded-xl border border-dashed bg-zinc-50/60 px-6 text-center sm:h-75 dark:bg-zinc-900/40">
             <div className="flex size-10 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-black/5 dark:bg-zinc-800">
-              <DollarSign className="size-5 text-muted-foreground" />
+              <IndianRupee className="size-5 text-muted-foreground" />
             </div>
             <p className="mt-3 text-sm font-semibold">No earnings yet</p>
             <p className="mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
-              Completed bookings this {range === "week" ? "week" : "month"}{" "}
-              will show up here.
+              Completed bookings this {range === "week" ? "week" : "month"} will
+              show up here.
             </p>
           </div>
         ) : (
           <ChartContainer
             config={chartConfig}
-            className="aspect-auto h-[260px] w-full sm:h-[300px]"
+            className="aspect-auto h-65 w-full sm:h-75"
           >
             {chartType === "bar" ? (
               <BarChart data={points} margin={{ left: 0, right: 8 }}>
@@ -237,7 +234,10 @@ export function EarningsChart({
           </ChartContainer>
         )}
         {isPending && (
-          <p className="mt-2 text-center text-xs text-muted-foreground" aria-live="polite">
+          <p
+            className="mt-2 text-center text-xs text-muted-foreground"
+            aria-live="polite"
+          >
             Updating…
           </p>
         )}

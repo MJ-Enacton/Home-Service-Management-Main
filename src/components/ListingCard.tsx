@@ -74,7 +74,7 @@ export function ListingCard({ listing }: ListingCardProps) {
           {listing.title}
         </h3>
 
-        <p className="line-clamp-2 text-sm text-muted-foreground">
+        <p className="line-clamp-3 text-sm text-muted-foreground">
           {listing.description || "Professional service at your doorstep."}
         </p>
 

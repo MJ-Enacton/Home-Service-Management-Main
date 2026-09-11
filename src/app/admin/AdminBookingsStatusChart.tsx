@@ -42,11 +42,11 @@ interface AdminBookingsStatusChartProps {
 }
 
 const statusColors = {
-  requested: "hsl(var(--chart-1))",
-  confirmed: "hsl(var(--chart-2))",
-  in_progress: "hsl(var(--chart-3))",
-  completed: "hsl(var(--chart-4))",
-  cancelled: "hsl(var(--chart-5))",
+  requested: "var(--chart-1)",
+  confirmed: "var(--chart-2)",
+  in_progress: "var(--chart-3)",
+  completed: "var(--chart-4)",
+  cancelled: "var(--chart-5)",
 } as const;
 
 const bookingsStatusChartConfig = {
@@ -134,11 +134,10 @@ export function AdminBookingsStatusChart({
         tickLine={false}
         axisLine={false}
         width={52}
+        allowDecimals={false}
         tickFormatter={(value: number) => String(value)}
       />
-      <ChartTooltip
-        content={<ChartTooltipContent formatter={(value) => value} />}
-      />
+      <ChartTooltip content={<ChartTooltipContent />} />
       <ChartLegend>
         <ChartLegendContent />
       </ChartLegend>
@@ -243,14 +242,16 @@ export function AdminBookingsStatusChart({
                     "completed",
                     "cancelled",
                   ] as const
-                ).map((key) => (
+                ).map((key, index, all) => (
                   <Bar
                     key={key}
                     dataKey={key}
+                    name={bookingsStatusChartConfig[key].label}
                     fill={statusColors[key]}
                     hide={false}
                     stackId="a"
-                    radius={[4, 4, 0, 0]}
+                    // Round only the top of the stack, not every segment.
+                    radius={index === all.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
                   />
                 ))}
               </BarChart>
@@ -270,6 +271,7 @@ export function AdminBookingsStatusChart({
                     key={key}
                     type="monotone"
                     dataKey={key}
+                    name={bookingsStatusChartConfig[key].label}
                     stroke={statusColors[key]}
                     strokeWidth={2}
                     dot={false}

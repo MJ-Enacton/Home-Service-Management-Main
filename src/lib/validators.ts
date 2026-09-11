@@ -8,8 +8,18 @@ export const signInSchema = z.object({
   password: z.string().min(1, { message: "Password is required." }),
 });
 
+/** Max lengths shared with form UIs (hints + live counters). */
+export const NAME_MAX_LENGTH = 20;
+export const LISTING_TITLE_MAX_LENGTH = 120;
+export const LISTING_DESCRIPTION_MAX_LENGTH = 500;
+
 export const signUpSchema = z.object({
-  name: z.string().min(2, { message: "Name must be at least 2 characters." }),
+  name: z
+    .string()
+    .min(2, { message: "Name must be at least 2 characters." })
+    .max(NAME_MAX_LENGTH, {
+      message: `Name must be at most ${NAME_MAX_LENGTH} characters.`,
+    }),
   contact: z
     .string()
     .min(10, { message: "Please enter a valid contact number." }),
@@ -45,8 +55,20 @@ export const tierSchema = z.object({
 });
 
 export const listingSchema = z.object({
-  title: z.string().min(5, "Title must be at least 5 characters.").max(120),
-  description: z.string().max(2000).nullish(),
+  title: z
+    .string()
+    .min(5, "Title must be at least 5 characters.")
+    .max(
+      LISTING_TITLE_MAX_LENGTH,
+      `Title must be at most ${LISTING_TITLE_MAX_LENGTH} characters.`,
+    ),
+  description: z
+    .string()
+    .max(
+      LISTING_DESCRIPTION_MAX_LENGTH,
+      `Description must be at most ${LISTING_DESCRIPTION_MAX_LENGTH} characters.`,
+    )
+    .nullish(),
   categorySlug: z.string().min(1, "Category is required."),
   // Pricing is required unless tiers are provided
   pricingType: z.enum(pricingTypeEnum.enumValues).optional(),

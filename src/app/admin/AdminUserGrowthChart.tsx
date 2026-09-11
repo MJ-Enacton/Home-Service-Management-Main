@@ -39,8 +39,8 @@ interface AdminUserGrowthChartProps {
 }
 
 const userGrowthChartConfig = {
-  customers: { label: "Customers", color: "hsl(var(--chart-1))" },
-  providers: { label: "Providers", color: "hsl(var(--chart-2))" },
+  customers: { label: "Customers", color: "var(--chart-2)" },
+  providers: { label: "Providers", color: "var(--chart-3)" },
 } satisfies {
   customers: { label: string; color: string };
   providers: { label: string; color: string };
@@ -105,11 +105,10 @@ export function AdminUserGrowthChart({
         tickLine={false}
         axisLine={false}
         width={52}
+        allowDecimals={false}
         tickFormatter={(value: number) => String(value)}
       />
-      <ChartTooltip
-        content={<ChartTooltipContent formatter={(value) => value} />}
-      />
+      <ChartTooltip content={<ChartTooltipContent />} />
       <ChartLegend>
         <ChartLegendContent />
       </ChartLegend>
@@ -208,13 +207,15 @@ export function AdminUserGrowthChart({
                 {sharedAxes}
                 <Bar
                   dataKey="customers"
-                  fill="hsl(var(--chart-1))"
+                  name="Customers"
+                  fill="var(--chart-2)"
                   stackId="a"
-                  radius={[4, 4, 0, 0]}
+                  radius={[0, 0, 0, 0]}
                 />
                 <Bar
                   dataKey="providers"
-                  fill="hsl(var(--chart-2))"
+                  name="Providers"
+                  fill="var(--chart-3)"
                   stackId="a"
                   radius={[4, 4, 0, 0]}
                 />
@@ -225,14 +226,16 @@ export function AdminUserGrowthChart({
                 <Line
                   type="monotone"
                   dataKey="customers"
-                  stroke="hsl(var(--chart-1))"
+                  name="Customers"
+                  stroke="var(--chart-2)"
                   strokeWidth={2}
                   dot={false}
                 />
                 <Line
                   type="monotone"
                   dataKey="providers"
-                  stroke="hsl(var(--chart-2))"
+                  name="Providers"
+                  stroke="var(--chart-3)"
                   strokeWidth={2}
                   dot={false}
                 />
