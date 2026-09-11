@@ -43,9 +43,10 @@ export const auth = betterAuth({
     // Users must verify their email (OTP) before they can sign in.
     requireEmailVerification: true,
     // Forgot-password reset link (Phase 3). Better Auth builds `url`.
+    // Awaited (not fire-and-forget): serverless functions freeze after the
+    // response, which can drop an in-flight SMTP send.
     async sendResetPassword({ user, url }) {
-      // Fire-and-forget: don't block the request, avoid timing attacks.
-      void sendMail({ to: user.email, ...resetLinkTemplate(url) });
+      await sendMail({ to: user.email, ...resetLinkTemplate(url) });
     },
   },
   socialProviders: {
@@ -74,8 +75,9 @@ export const auth = betterAuth({
         console.log(
           `\n[auth] verification code for ${email}: ${otp} (expires in 5 min)\n`,
         );
-        // Fire-and-forget per Better Auth docs (avoid timing attacks).
-        void sendMail({ to: email, ...otpTemplate(otp) }, otp);
+        // Awaited (not fire-and-forget): serverless functions freeze after
+        // the response, which can drop an in-flight SMTP send.
+        await sendMail({ to: email, ...otpTemplate(otp) }, otp);
       },
     }),
   ],
