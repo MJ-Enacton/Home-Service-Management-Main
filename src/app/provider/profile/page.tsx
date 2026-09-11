@@ -7,6 +7,7 @@ import { providerAvailability, providerProfiles } from "@/lib/db/schema";
 import type { AvailabilityWindow } from "@/lib/availability";
 import { hasPassword } from "@/lib/auth/passwordConfigured";
 import { ChangePasswordDialog } from "@/components/profile/change-password-dialog";
+import { SetPasswordButton } from "@/components/profile/SetPasswordButton";
 import { SignOutCard } from "@/components/auth/SignOutDialog";
 import { ProviderProfileEditor } from "@/components/profile/ProviderProfileEditor";
 import { AvailabilityEditor } from "@/components/profile/AvailabilityEditor";
@@ -82,13 +83,23 @@ export default async function ProviderProfilePage() {
                   </div>
                 </CardContent>
               </Card>
-              {passwordConfigured && (
+              {passwordConfigured ? (
                 <Card>
                   <CardHeader><CardTitle>Security</CardTitle><CardDescription>Manage your account password.</CardDescription></CardHeader>
                   <CardContent>
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                       <div className="flex-1"><p className="text-sm font-medium">Password</p><p className="mt-1 text-sm text-muted-foreground">Change your password to keep your account secure.</p></div>
                       <ChangePasswordDialog />
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <CardHeader><CardTitle>Security</CardTitle><CardDescription>Manage your account password.</CardDescription></CardHeader>
+                  <CardContent>
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                      <div className="flex-1"><p className="text-sm font-medium">Password</p><p className="mt-1 text-sm text-muted-foreground">You signed in with Google, so no password is set. Add one to sign in with email too.</p></div>
+                      <SetPasswordButton email={user.email} />
                     </div>
                   </CardContent>
                 </Card>

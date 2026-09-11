@@ -26,6 +26,7 @@ import {
   MapLocationPicker,
   type PickedLocation,
 } from "@/components/MapLocationPicker";
+import { getPasswordStatus, setInitialPassword } from "./actions";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -36,6 +37,22 @@ export default function OnboardingPage() {
   const [location, setLocation] = useState<PickedLocation | null>(null);
   const [role, setRole] = useState<"customer" | "provider">("customer");
   const [isLoading, setIsLoading] = useState(false);
+  // Google sign-ups arrive without a password — offer to set one so email
+  // sign-in works too. Null while the status is loading.
+  const [needsPassword, setNeedsPassword] = useState<boolean | null>(null);
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
+  useEffect(() => {
+    if (isPending || !session?.user) return;
+    let cancelled = false;
+    void getPasswordStatus().then((status) => {
+      if (!cancelled) setNeedsPassword(!status.hasPassword);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isPending, session?.user]);
 
   useEffect(() => {
     if (!isPending && !session?.user) {
@@ -58,6 +75,16 @@ export default function OnboardingPage() {
       alert("Please pick your address on the map (or search above).");
       return;
     }
+    if (password || confirmPassword) {
+      if (password.length < 8) {
+        alert("Password must be at least 8 characters.");
+        return;
+      }
+      if (password !== confirmPassword) {
+        alert("Passwords don't match.");
+        return;
+      }
+    }
 
     setIsLoading(true);
     const { error } = await authClient.updateUser({
@@ -68,12 +95,22 @@ export default function OnboardingPage() {
       role,
     });
 
-    setIsLoading(false);
-
     if (error) {
+      setIsLoading(false);
       alert(error.message);
       return;
     }
+
+    // Optional first password for Google sign-ups (skipped when blank).
+    if (password) {
+      const pwResult = await setInitialPassword(password);
+      if (!pwResult.success) {
+        setIsLoading(false);
+        alert(pwResult.error);
+        return;
+      }
+    }
+    setIsLoading(false);
 
     // Role-based welcome email for OAuth signups (best-effort).
     void sendWelcomeEmailForCurrentUser().catch(() => undefined);
@@ -126,6 +163,36 @@ export default function OnboardingPage() {
                 </SelectContent>
               </Select>
             </div>
+            {needsPassword && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="password">Create a password (optional)</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="At least 8 characters"
+                    autoComplete="new-password"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Lets you sign in with email too — otherwise Google
+                    sign-in only.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="confirm-password">Confirm password</Label>
+                  <Input
+                    id="confirm-password"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Repeat the password"
+                    autoComplete="new-password"
+                  />
+                </div>
+              </>
+            )}
             <Button type="submit" className="w-full" disabled={isLoading || !location}>
               {isLoading ? "Saving..." : "Complete Profile"}
             </Button>

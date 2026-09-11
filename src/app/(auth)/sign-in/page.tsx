@@ -134,6 +134,10 @@ export default function SignInPage() {
             {isLoading ? "Signing in…" : "Sign in"}
           </Button>
         </form>
+        <p className="text-center text-xs leading-relaxed text-muted-foreground">
+          Signed up with Google? Use Continue with Google below — no password
+          needed.
+        </p>
 
         <div className="relative">
           <div className="absolute inset-0 flex items-center">

@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { hasPassword } from "@/lib/auth/passwordConfigured";
 import { ChangePasswordDialog } from "@/components/profile/change-password-dialog";
+import { SetPasswordButton } from "@/components/profile/SetPasswordButton";
 import { SharedProfileHeader } from "@/components/profile/SharedProfileHeader";
 import { SignOutCard } from "@/components/auth/SignOutDialog";
 import { BackButton } from "@/components/BackButton";
@@ -74,13 +75,23 @@ export default async function CustomerProfilePage() {
                 </CardContent>
               </Card>
 
-              {passwordConfigured && (
+              {passwordConfigured ? (
                 <Card>
                   <CardHeader><CardTitle>Security</CardTitle><CardDescription>Manage your account password.</CardDescription></CardHeader>
                   <CardContent>
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                       <div className="flex-1"><p className="text-sm font-medium">Password</p><p className="mt-1 text-sm text-muted-foreground">Change your password to keep your account secure.</p></div>
                       <ChangePasswordDialog />
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <CardHeader><CardTitle>Security</CardTitle><CardDescription>Manage your account password.</CardDescription></CardHeader>
+                  <CardContent>
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                      <div className="flex-1"><p className="text-sm font-medium">Password</p><p className="mt-1 text-sm text-muted-foreground">You signed in with Google, so no password is set. Add one to sign in with email too.</p></div>
+                      <SetPasswordButton email={user.email} />
                     </div>
                   </CardContent>
                 </Card>
