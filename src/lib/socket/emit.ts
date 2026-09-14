@@ -1,5 +1,6 @@
-const SOCKET_INTERNAL_URL =
-  process.env.SOCKET_INTERNAL_URL || "http://localhost:5000";
+const SOCKET_INTERNAL_URL = (
+  process.env.SOCKET_INTERNAL_URL || "http://localhost:5000"
+).replace(/\/+$/, "");
 const INTERNAL_SECRET =
   process.env.SOCKET_INTERNAL_SECRET || "dev-secret-change-in-production";
 
@@ -25,7 +26,10 @@ async function internalEmit(payload: {
       const error = await response
         .json()
         .catch(() => ({ error: "Unknown error" }));
-      console.error("[socket] Failed to emit:", error);
+      console.error(
+        `[socket] Failed to emit to ${SOCKET_INTERNAL_URL} (status ${response.status}):`,
+        error,
+      );
     }
   } catch (error) {
     console.error("[socket] Internal emit request failed:", error);

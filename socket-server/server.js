@@ -75,8 +75,18 @@ async function getUserFromRequest(req) {
   }
 }
 
+// Lenient path matching: ignores query strings, trailing slashes and
+// accidental double slashes (e.g. a SOCKET_INTERNAL_URL configured with a
+// trailing slash yields "//internal/emit"). Exact-match routing would 404.
+function requestPathname(req) {
+  const raw = (req.url || "/").split("?")[0];
+  const trimmed = raw.length > 1 ? raw.replace(/\/+$/, "") : raw;
+  return trimmed.replace(/^\/{2,}/, "/");
+}
+
 const httpServer = createServer(async (req, res) => {
-  if (req.method === "POST" && req.url === "/internal/emit") {
+  const pathname = requestPathname(req);
+  if (req.method === "POST" && pathname === "/internal/emit") {
     let body = "";
     for await (const chunk of req) {
       body += chunk;
@@ -114,7 +124,7 @@ const httpServer = createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === "GET" && req.url === "/health") {
+  if (req.method === "GET" && pathname === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(
       JSON.stringify({ status: "ok", connections: io.engine.clientsCount }),
