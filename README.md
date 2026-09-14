@@ -7,6 +7,7 @@ Built with Next.js 16 App Router + React 19 + TypeScript + Tailwind CSS 4 + shad
 ## Features
 
 **Customers**
+
 - Browse/search/filter/sort service catalog (`/services`) with debounced API, category, price, rating filters
 - Service detail with tiers, gallery, reviews, availability slots, checkout
 - Book services (today → +7 days), pay via Razorpay, track lifecycle
@@ -15,6 +16,7 @@ Built with Next.js 16 App Router + React 19 + TypeScript + Tailwind CSS 4 + shad
 - Profile with saved contact/address, change password
 
 **Providers**
+
 - Dashboard with KPIs, earnings chart (completed-only net), today/upcoming bookings
 - Service CRUD with Zod validation, tiers, Cloudinary gallery, draft/active/inactive flow
 - Weekly availability windows → generated booking slots
@@ -22,11 +24,13 @@ Built with Next.js 16 App Router + React 19 + TypeScript + Tailwind CSS 4 + shad
 - Notifications inbox, profile/bio/avatar/availability editors
 
 **Admins**
+
 - KPI dashboard: revenue, users, bookings + revenue/status/growth charts
 - Moderate listings (approve/reject/activate), users (ban/unban with reason), all bookings table
 - Revenue view with platform fees + payments + payout settlement status
 
 **Platform**
+
 - Auth: Better-Auth email+password + Google OAuth, 6-digit email OTP verification, password reset, onboarding gate, ban gate
 - Role guards in `src/proxy.ts` (Next 16 `proxy`) + layout-level re-checks; never trust client role
 - Bookings state machine: `requested → confirmed → in_progress → completed`, `cancelled` from requested/confirmed
@@ -38,18 +42,18 @@ Built with Next.js 16 App Router + React 19 + TypeScript + Tailwind CSS 4 + shad
 
 ## Tech Stack
 
-| Layer | Choice |
-|---|---|
-| Framework | Next.js 16.3.1 App Router, React 19, React Compiler |
+| Layer        | Choice                                                                             |
+| ------------ | ---------------------------------------------------------------------------------- |
+| Framework    | Next.js 16.3.1 App Router, React 19, React Compiler                                |
 | Styling / UI | Tailwind CSS 4, shadcn (base-nova, neutral), lucide-react, framer-motion, recharts |
-| Auth | Better-Auth 1.7.1 (Drizzle adapter, email+password + Google) |
-| DB | Neon Postgres + Drizzle ORM 0.45.2, 17 tables in `src/lib/db/schema.ts` |
-| Realtime | Socket.IO 4.8.3 server + client singleton |
-| Uploads | Cloudinary signed direct upload + `next-cloudinary` |
-| Payments | Razorpay Checkout + Orders API (test mode) |
-| Email | Nodemailer 10 via Gmail App Password |
-| Validation | Zod 4 |
-| Maps | Leaflet / react-leaflet (address picking) |
+| Auth         | Better-Auth 1.7.1 (Drizzle adapter, email+password + Google)                       |
+| DB           | Neon Postgres + Drizzle ORM 0.45.2, 17 tables in `src/lib/db/schema.ts`            |
+| Realtime     | Socket.IO 4.8.3 server + client singleton                                          |
+| Uploads      | Cloudinary signed direct upload + `next-cloudinary`                                |
+| Payments     | Razorpay Checkout + Orders API (test mode)                                         |
+| Email        | Nodemailer 10 via Gmail App Password                                               |
+| Validation   | Zod 4                                                                              |
+| Maps         | Leaflet / react-leaflet (address picking)                                          |
 
 ## Getting Started
 
@@ -74,6 +78,11 @@ Copy `.env.example` to `.env.local` and fill in:
 
 ```bash
 SOCKET_PORT=5000
+# Standalone socket deploy (Render): Root Directory = socket-server/.
+SOCKET_CORS_ORIGIN=           # preferred, comma-separated (SOCKET_URL is legacy single-origin)
+SOCKET_INTERNAL_SECRET=
+SOCKET_INTERNAL_URL=          # Vercel server -> Render, e.g. https://handyhub-socket.onrender.com
+NEXT_PUBLIC_SOCKET_URL=       # browser -> Render (same URL, bakes at build time)
 BETTER_AUTH_SECRET=
 BETTER_AUTH_URL=http://localhost:3000
 NEXT_PUBLIC_APP_URL=http://localhost:3000
@@ -138,17 +147,17 @@ npm run lint
 
 ## Scripts
 
-| Script | Description |
-|---|---|
-| `npm run dev` | `next dev` + `node socket-server/server.js` |
-| `npm run dev:next` / `dev:socket` / `dev:all` | Next only / socket only / both |
-| `npm run build` / `npm start` | Build / serve + socket server |
-| `npm run lint` | ESLint |
-| `npm run verify:email` | `scripts/verify-email.mjs` — checks Gmail SMTP auth |
+| Script                                        | Description                                           |
+| --------------------------------------------- | ----------------------------------------------------- |
+| `npm run dev`                                 | `next dev` + `node socket-server/server.js`           |
+| `npm run dev:next` / `dev:socket` / `dev:all` | Next only / socket only / both                        |
+| `npm run build` / `npm start`                 | Build / serve + socket server                         |
+| `npm run lint`                                | ESLint                                                |
+| `npm run verify:email`                        | `scripts/verify-email.mjs` — checks Gmail SMTP auth   |
 | `node scripts/apply-migration.mjs <file.sql>` | Apply one Drizzle SQL file statement-wise, idempotent |
-| `node scripts/seed-categories.mjs` | Upsert categories |
-| `node scripts/seed-demo-listings.mjs` | Demo provider + listings |
-| `node scripts/seed-demo-chat.mjs` | Demo booking chat |
+| `node scripts/seed-categories.mjs`            | Upsert categories                                     |
+| `node scripts/seed-demo-listings.mjs`         | Demo provider + listings                              |
+| `node scripts/seed-demo-chat.mjs`             | Demo booking chat                                     |
 
 ## Project Structure
 
@@ -178,7 +187,9 @@ src/lib/
   format.ts / notification-types.ts / utils.ts (cn)
 src/types/          # auth, booking, service, notification, user + ActionResult barrel
 src/hooks/          # useDebouncedValue
-socket-server/server.js  # Socket.IO hub: cookie auth → Neon lookup, user:{id} rooms
+socket-server/      # standalone Socket.IO hub (own package.json for Render)
+  server.js         # cookie auth → Neon lookup, user:{id} rooms
+  package.json      # 3 deps only: socket.io, @neondatabase/serverless, dotenv
 drizzle/            # versioned SQL + meta/
 scripts/            # apply-migration, seeds, verify-email
 ```
@@ -188,33 +199,45 @@ Routing convention: `page.tsx` (RSC fetch) + `loading.tsx` (skeleton) + `*Client
 ## Core Concepts
 
 **Auth & roles (`src/proxy.ts`, `src/lib/roles.ts`)**
+
 - Public: `/services*`. Everything else forces sign-in + `/verify-email` (email/password users; Google skips).
 - `/customer*`, `/provider*`, `/admin*` guarded by `resolveRole()` → customer|provider|admin. Layouts re-check server-side.
 
 **Bookings (`src/lib/booking-transitions.ts`, `src/lib/bookings/actions.ts`)**
+
 - All mutations go through the state machine (atomic txn + notification + socket + email).
 - DB arbitrates concurrency via the no-overlap unique index; second committer gets a violation, not a phantom booking.
 
 **Pricing (`src/lib/pricing.ts`)**
+
 - Integer cents math, 10% platform fee, human-readable `HB-xxxxx` numbers.
 
 **Availability (`src/lib/availability.ts`, `src/lib/booking-window.ts`)**
+
 - Provider weekly windows (0=Sun..6=Sat, `HH:mm`) expand into slots; only today→+7d is bookable.
 
-**Realtime (`socket-server/server.js`, `src/lib/socket/`)**
+**Realtime (`socket-server/`, `src/lib/socket/`)**
+
 - Next pushes via `POST /internal/emit` (`lib/socket/emit.ts` → `emitToUser(s)`). Browser subscribes via `lib/socket/client.ts` singleton with backoff. Keep `notification-types.ts` in sync with DB enum.
+- Vercel can't run the socket process — deploy `socket-server/` standalone (Render Web Service, Root Directory `socket-server/`, Build `npm install --omit=dev`, Start `npm start`, Health `/health`). The server listens on `PORT` (host-injected) falling back to `SOCKET_PORT`.
 
 **Uploads (`src/lib/cloudinary.ts`, `api/cloudinary/`)**
+
 - Server signs in `api/cloudinary/sign` + records `pending_uploads`; browser uploads direct; save actions consume rows; cancelled/stale assets deleted via `api/cloudinary/orphan`.
 
 **Email (`src/lib/email/`)**
+
 - `sendMail()` is best-effort and never throws. Run `npm run verify:email` before debugging mail.
 
 **Migrations**
+
 - Edit `schema.ts` → `drizzle-kit generate` → `node scripts/apply-migration.mjs`. Use direct (non-pooled) URL for DDL.
 
 ## Deployment
 
 - Set production `BETTER_AUTH_URL` / `NEXT_PUBLIC_APP_URL` (see `.env.example`), plus Neon, Cloudinary, Gmail, Razorpay, Google vars.
 - `next.config.ts` enables `reactCompiler` and allows `res.cloudinary.com` images.
-- Run Next + `socket-server/server.js` together (`npm start`). Socket server needs `DATABASE_URL`, `SOCKET_PORT`, `SOCKET_CORS_ORIGIN`, `SOCKET_INTERNAL_SECRET`.
+- Split deploy (Vercel can't hold the Socket.IO process):
+  - **Vercel (Next.js only):** default build/`next start`. Set `SOCKET_INTERNAL_URL`, `NEXT_PUBLIC_SOCKET_URL` (both = Render URL), `SOCKET_INTERNAL_SECRET`, then redeploy (`NEXT_PUBLIC_*` bakes at build time).
+  - **Render (socket only):** same repo, Root Directory `socket-server/`, Build `npm install --omit=dev`, Start `npm start`, Health `/health`. Env: `DATABASE_URL`, `SOCKET_CORS_ORIGIN=https://<vercel-app>.vercel.app`, `SOCKET_INTERNAL_SECRET` (same as Vercel), `NODE_ENV=production`. Refuses to boot without the secret in production.
+- Local dev still runs both together: `npm run dev` (`next dev` + `node socket-server/server.js`).

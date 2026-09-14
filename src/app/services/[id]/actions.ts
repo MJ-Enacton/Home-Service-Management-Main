@@ -17,31 +17,32 @@ import {
   user,
 } from "@/lib/db/schema";
 import type { ActionResult, Payment } from "@/types";
-import {
-  bookingDetailsSchema,
-  bookingScheduleSchema,
-} from "@/lib/validators";
+import { bookingDetailsSchema, bookingScheduleSchema } from "@/lib/validators";
 import {
   computePriceBreakdown,
   generateBookingNumber,
   providerShare,
 } from "@/lib/pricing";
-import { createRazorpayOrder, fetchRazorpayPayment, razorpayKeyId, razorpayKeySecret, verifyPaymentSignature } from "@/lib/razorpay";
+import {
+  createRazorpayOrder,
+  fetchRazorpayPayment,
+  razorpayKeyId,
+  razorpayKeySecret,
+  verifyPaymentSignature,
+} from "@/lib/razorpay";
 import { generateSlots } from "@/lib/availability";
 import { isDateWithinBookingWindow } from "@/lib/booking-window";
 import type { Slot } from "@/lib/availability";
 import { emitToUser } from "@/lib/socket/emit";
 import { sendMail } from "@/lib/email/send";
 import { paymentReceiptTemplate } from "@/lib/email/templates";
-import { formatBookingSchedule, formatCents, todayLocalDate } from "@/lib/format";
 import {
-  pushUnreadCount,
-  type NewRequestEvent,
-} from "@/lib/socket/notify";
-import {
-  getListingReviews,
-  type ReviewSort,
-} from "@/lib/db/queries/listings";
+  formatBookingSchedule,
+  formatCents,
+  todayLocalDate,
+} from "@/lib/format";
+import { pushUnreadCount, type NewRequestEvent } from "@/lib/socket/notify";
+import { getListingReviews, type ReviewSort } from "@/lib/db/queries/listings";
 
 /** Paginated reviews for the Top Reviews section (no auth required). */
 export async function getServiceReviews(
@@ -51,9 +52,7 @@ export async function getServiceReviews(
   pageSize = 6,
 ) {
   const safeSort: ReviewSort =
-    sort === "recent" || sort === "highest" || sort === "lowest"
-      ? sort
-      : "top";
+    sort === "recent" || sort === "highest" || sort === "lowest" ? sort : "top";
   const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 0;
   const safeSize =
     Number.isFinite(pageSize) && pageSize > 0
@@ -110,7 +109,8 @@ export async function getScheduleOptions(
   if (!isDateWithinBookingWindow(date)) {
     return {
       success: false,
-      error: "Bookings are allowed only within the next 7 days (today included).",
+      error:
+        "Bookings are allowed only within the next 7 days (today included).",
     };
   }
 
@@ -202,11 +202,18 @@ export async function bookService(
   const usedSavedAddress = details.data.addressSource === "saved";
   if (usedSavedAddress) {
     const [me] = await db
-      .select({ address: user.address, latitude: user.latitude, longitude: user.longitude })
+      .select({
+        address: user.address,
+        latitude: user.latitude,
+        longitude: user.longitude,
+      })
       .from(user)
       .where(eq(user.id, session.user.id));
     if (!me?.address?.trim()) {
-      return { success: false, error: "No saved address found — pick a location instead." };
+      return {
+        success: false,
+        error: "No saved address found — pick a location instead.",
+      };
     }
     streetAddress = me.address;
     latitude = me.latitude ?? null;
@@ -254,7 +261,10 @@ export async function bookService(
       .select({ id: serviceTiers.id, price: serviceTiers.price })
       .from(serviceTiers)
       .where(
-        and(eq(serviceTiers.id, tierId), eq(serviceTiers.listingId, listing.id)),
+        and(
+          eq(serviceTiers.id, tierId),
+          eq(serviceTiers.listingId, listing.id),
+        ),
       );
     if (!tier) {
       return { success: false, error: "Selected pricing tier is invalid." };
@@ -273,7 +283,8 @@ export async function bookService(
     if (!isDateWithinBookingWindow(schedule.data.scheduledDate!)) {
       return {
         success: false,
-        error: "Bookings are allowed only within the next 7 days (today included).",
+        error:
+          "Bookings are allowed only within the next 7 days (today included).",
       };
     }
     const slotCheck = await getScheduleOptions(
@@ -364,7 +375,11 @@ export async function bookService(
             throw new Error("SLOT_TAKEN");
           }
 
-          const { contactFullName, addressSource: _source, ...restDetails } = details.data;
+          const {
+            contactFullName,
+            addressSource: _source,
+            ...restDetails
+          } = details.data;
           void _source;
           const [firstName, ...lastNameParts] = (contactFullName || "").split(
             " ",
@@ -433,7 +448,8 @@ export async function bookService(
         ) {
           return {
             success: false,
-            error: "That time slot is no longer available. Please pick another.",
+            error:
+              "That time slot is no longer available. Please pick another.",
           };
         }
         if (message.includes("bookings_booking_number_unique")) {
@@ -592,7 +608,10 @@ export async function verifyBookingPayment(input: {
     payment.status !== "pending" ||
     payment.razorpayOrderId !== input.razorpayOrderId
   ) {
-    return { success: false, error: "This payment can no longer be completed." };
+    return {
+      success: false,
+      error: "This payment can no longer be completed.",
+    };
   }
 
   const signatureOk = verifyPaymentSignature(

@@ -4,13 +4,31 @@ import { Server } from "socket.io";
 import { neon } from "@neondatabase/serverless";
 
 const SOCKET_PORT = Number(process.env.SOCKET_PORT) || 5000;
-const APP_PORT = Number(process.env.PORT) || 3000;
+// Render (and most hosts) inject PORT for the public listener. SOCKET_PORT
+// remains the local-dev override. APP_PORT is deliberately separate so a
+// host-provided PORT never corrupts the localhost CORS fallback below.
+const LISTEN_PORT = Number(process.env.PORT) || SOCKET_PORT;
+const APP_PORT = Number(process.env.APP_PORT) || 3000;
 const INTERNAL_SECRET =
   process.env.SOCKET_INTERNAL_SECRET || "dev-secret-change-in-production";
 
+if (
+  process.env.NODE_ENV === "production" &&
+  !process.env.SOCKET_INTERNAL_SECRET
+) {
+  console.error(
+    "[socket] Missing SOCKET_INTERNAL_SECRET in production — refusing to start.",
+  );
+  process.exit(1);
+}
+
+// SOCKET_CORS_ORIGIN (comma-separated, preferred) with SOCKET_URL (single,
+// legacy) fallback so existing deploys keep working.
 const allowedOrigins = process.env.SOCKET_CORS_ORIGIN
   ? process.env.SOCKET_CORS_ORIGIN.split(",").map((origin) => origin.trim())
-  : [`http://localhost:${APP_PORT}`];
+  : process.env.SOCKET_URL
+    ? [process.env.SOCKET_URL]
+    : [`http://localhost:${APP_PORT}`];
 
 const sql = neon(process.env.DATABASE_URL);
 
@@ -142,7 +160,8 @@ io.on("connection", (socket) => {
     try {
       const bookingId = payload?.bookingId;
       const isTyping = payload?.isTyping;
-      if (typeof bookingId !== "string" || typeof isTyping !== "boolean") return;
+      if (typeof bookingId !== "string" || typeof isTyping !== "boolean")
+        return;
 
       const rows = await sql`
         SELECT
@@ -183,6 +202,6 @@ io.on("connection", (socket) => {
   });
 });
 
-httpServer.listen(SOCKET_PORT, () => {
-  console.log(`> Socket.IO running on http://localhost:${SOCKET_PORT}`);
+httpServer.listen(LISTEN_PORT, () => {
+  console.log(`> Socket.IO running on http://localhost:${LISTEN_PORT}`);
 });
